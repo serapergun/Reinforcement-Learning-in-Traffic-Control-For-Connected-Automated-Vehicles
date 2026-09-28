@@ -90,8 +90,19 @@ def generate_e2(net_path, add_path, out_rel):
 
 def run_sumo(scenario, results):
     cfg = os.path.join(scenario, "due.actuated.sumocfg")
+    # LuST v2.0 configuration uses whitespace-separated route-files, which modern
+    # SUMO interprets as a single filename. Override with the exact official files
+    # using the current comma-separated syntax; no routes are modified.
+    route_files = ",".join([
+        "buslines.rou.xml",
+        "DUERoutes/local.actuated.0.rou.xml",
+        "DUERoutes/local.actuated.1.rou.xml",
+        "DUERoutes/local.actuated.2.rou.xml",
+        "transit.rou.xml",
+    ])
     cmd = [
         "sumo", "-c", cfg,
+        "--route-files", route_files,
         "--additional-files", "vtypes.add.xml,busstops.add.xml,study_e2.add.xml",
         "--summary-output", os.path.relpath(os.path.join(results, "study_summary.xml.gz"), scenario),
         "--tripinfo-output", os.path.relpath(os.path.join(results, "study_tripinfo.xml.gz"), scenario),
