@@ -5,8 +5,7 @@ on:
     branches:
       - lust-dynamic-coalition-exp-20260928
     paths:
-      - 'research/lust_dynamic_coalition/**'
-      - '.github/workflows/lust-real-baseline.yml'
+      - 'research/lust_dynamic_coalition/real_lust_baseline.py'
   workflow_dispatch:
 
 jobs:
