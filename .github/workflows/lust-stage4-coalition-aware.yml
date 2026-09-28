@@ -1,0 +1,62 @@
+name: Real LuST Stage4 Coalition-Aware MAPPO
+
+on:
+  workflow_run:
+    workflows: ["Real LuST Stage3 MAPPO Pilot"]
+    types: [completed]
+
+jobs:
+  coalition-aware:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+
+      - name: Install SUMO and PyTorch
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sumo sumo-tools git python3-pip
+          python3 -m pip install --break-system-packages numpy
+          python3 -m pip install --break-system-packages torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download Stage3 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: real-lust-stage3-mappo-pilot
+          path: stage3_results
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Fetch official LuST v2.0
+        run: |
+          git clone --depth 1 --branch v2.0 https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust rev-parse HEAD
+          sumo --version | head -n 3
+
+      - name: Train coalition-aware MAPPO and evaluate all feasible coalitions
+        run: |
+          mkdir -p stage4_results
+          python3 research/lust_dynamic_coalition/train_coalition_aware_mappo.py             --scenario official_lust/scenario             --selection stage3_results/selected_9_tls.csv             --windows stage3_results/selected_operating_windows.csv             --gru stage3_results/gru_queue60s.pt             --outdir stage4_results             --episodes 20             --train-control-s 600             --eval-control-s 600             --p-fcd 0.20             --p-v2x 0.75             --seed 42
+
+      - name: Preserve upstream provenance
+        if: always()
+        run: |
+          cp stage3_results/selected_9_tls.csv stage4_results/ 2>/dev/null || true
+          cp stage3_results/selected_operating_windows.csv stage4_results/ 2>/dev/null || true
+          cp stage3_results/gru_validation.json stage4_results/ 2>/dev/null || true
+          cp stage3_results/gru_queue60s.pt stage4_results/ 2>/dev/null || true
+          git -C official_lust rev-parse HEAD > stage4_results/official_lust_commit.txt || true
+          sumo --version > stage4_results/sumo_version.txt || true
+
+      - name: Upload coalition-aware artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-lust-stage4-coalition-aware-pilot
+          path: stage4_results/
+          if-no-files-found: warn
+          retention-days: 30
