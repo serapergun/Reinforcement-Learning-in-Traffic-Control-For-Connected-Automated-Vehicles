@@ -101,6 +101,8 @@ class CoalitionEnv:
         self.conn=None; self.decision_dt=10; self.min_green=10.0
         self.metrics=defaultdict(float); self.steps=0
         self.resource=defaultdict(float)
+        self.prev_selected_vids=set()
+        self.last_time_loss={}
 
     @property
     def obs_dim(self): return 3+3+2+3+1+4
@@ -126,7 +128,16 @@ class CoalitionEnv:
                     raw=self.raw_state(tl)
                     ch=self.channels(tl,raw,count_resources=False)
                     self.forecaster.append(tl,ch["gru_input"])
-        return self.observe()
+        obs=self.observe()
+        current=set()
+        for tl in self.tls:
+            current.update(self.raw_state(tl)["vids"])
+        self.prev_selected_vids=current
+        self.last_time_loss={}
+        for vid in current:
+            try:self.last_time_loss[vid]=self.conn.vehicle.getTimeLoss(vid)
+            except Exception:pass
+        return obs
 
     def close(self):
         if self.conn:
@@ -258,15 +269,31 @@ class CoalitionEnv:
             elif spent>=self.min_green:self.conn.trafficlight.setPhaseDuration(tl,0.1)
 
     def step(self,actions):
-        self.apply(actions); arrived=0; co2=0.
+        self.apply(actions); arrived=0; co2=0.; served=0; tl_inc=0.
         for _ in range(self.decision_dt):
             if self.conn.simulation.getMinExpectedNumber()<=0:break
             self.conn.simulationStep(); arrived+=self.conn.simulation.getArrivedNumber()
-            for tl in self.tls:co2+=self.raw_state(tl)["co2"]
+            current=set()
+            for tl in self.tls:
+                rs=self.raw_state(tl); co2+=rs["co2"]; current.update(rs["vids"])
+            # Vehicles leaving the union of controlled incoming approaches are counted
+            # as controlled-approach service events (intersection passages).
+            served+=len(self.prev_selected_vids-current)
+            new_last={}
+            for vid in current:
+                try:
+                    cur=float(self.conn.vehicle.getTimeLoss(vid))
+                    if vid in self.last_time_loss:
+                        tl_inc+=max(0.,cur-self.last_time_loss[vid])
+                    new_last[vid]=cur
+                except Exception:pass
+            self.prev_selected_vids=current
+            self.last_time_loss=new_last
         raw=[self.raw_state(tl) for tl in self.tls]
         halt=sum(x["halt"] for x in raw); wait=sum(x["waiting"] for x in raw); lanes=sum(x["lanes"] for x in raw)
         reward=-.5*halt/max(8*lanes,1)-.5*wait/max(300*lanes,1)
         self.metrics["halt"]+=halt;self.metrics["waiting"]+=wait;self.metrics["arrived"]+=arrived
+        self.metrics["served"]+=served;self.metrics["time_loss"]+=tl_inc
         self.metrics["co2_mg"]+=co2;self.metrics["reward"]+=reward;self.steps+=1
         done=self.conn.simulation.getTime()>=self.end or self.conn.simulation.getMinExpectedNumber()<=0
         return self.observe(),float(reward),done
@@ -276,7 +303,9 @@ class CoalitionEnv:
         return {
             "mean_halting_vehicles":self.metrics["halt"]/n,
             "mean_waiting_time_lane_sum_s":self.metrics["waiting"]/n,
-            "arrived_vehicles":self.metrics["arrived"],
+            "arrived_vehicles_global":self.metrics["arrived"],
+            "controlled_throughput_events":self.metrics["served"],
+            "approach_time_loss_s":self.metrics["time_loss"],
             "CO2_kg_selected_approaches":self.metrics["co2_mg"]/1e6,
             "mean_reward":self.metrics["reward"]/n,
             "payload_kB":self.resource["data_bytes"]/1024.,
