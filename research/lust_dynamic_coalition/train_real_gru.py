@@ -24,7 +24,7 @@ def make_sequences(rows,L=30,h=6):
     for r in rows:
         by.setdefault(r["tls_id"],[]).append(r)
     X=[]; y=[]; times=[]; tls=[]
-    feats=["veh_count","halting_count","mean_speed_mps","mean_occupancy_pct","waiting_time_s","co2_mg_s"]
+    # Predictive inputs are limited to traffic-state variables that can be mapped to stakeholder data channels.\n    # CO2 is retained as an evaluation/resource outcome, not used as a GRU predictor.\n    feats=["veh_count","halting_count","mean_speed_mps","mean_occupancy_pct","waiting_time_s"]
     for tid,rs in by.items():
         rs=sorted(rs,key=lambda x:x["time_s"])
         arr=np.array([[r[k] for k in feats] for r in rs],dtype=np.float32)
