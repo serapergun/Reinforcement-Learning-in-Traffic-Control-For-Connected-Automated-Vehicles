@@ -1,0 +1,63 @@
+name: Real LuST Stage2 GRU
+
+on:
+  workflow_run:
+    workflows: ["Real LuST v2 Baseline"]
+    types: [completed]
+
+jobs:
+  stage2:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_sha == 'd233b694c88a56a2ad521e840eabcc7c779f18b2' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+
+      - name: Install SUMO and ML dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sumo sumo-tools git python3-pip
+          python3 -m pip install --break-system-packages numpy matplotlib
+          python3 -m pip install --break-system-packages torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download successful baseline artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: real-lust-v2-baseline-results
+          path: baseline_results
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Fetch official LuST v2.0
+        run: |
+          git clone --depth 1 --branch v2.0 https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust rev-parse HEAD
+
+      - name: Collect 10-second real 9-TLS state dataset
+        run: |
+          mkdir -p stage2_results
+          python3 research/lust_dynamic_coalition/collect_real_tls_dataset.py             --scenario official_lust/scenario             --selection baseline_results/selected_9_tls.csv             --output stage2_results/real_9tls_state_10s.csv             --seed 42
+
+      - name: Train and validate GRU against persistence
+        run: |
+          python3 research/lust_dynamic_coalition/train_real_gru.py             --data stage2_results/real_9tls_state_10s.csv             --outdir stage2_results/gru             --epochs 25             --seed 42
+
+      - name: Copy baseline selection and provenance
+        if: always()
+        run: |
+          cp baseline_results/selected_9_tls.csv stage2_results/ 2>/dev/null || true
+          cp baseline_results/run_metadata.json stage2_results/baseline_run_metadata.json 2>/dev/null || true
+          git -C official_lust rev-parse HEAD > stage2_results/official_lust_commit.txt || true
+          sumo --version > stage2_results/sumo_version.txt || true
+
+      - name: Upload Stage2 real-data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-lust-stage2-gru-results
+          path: stage2_results/
+          if-no-files-found: warn
+          retention-days: 30
