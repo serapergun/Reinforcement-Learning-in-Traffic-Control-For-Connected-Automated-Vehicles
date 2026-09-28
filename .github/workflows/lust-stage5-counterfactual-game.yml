@@ -1,0 +1,62 @@
+name: Real LuST Stage5 Counterfactual Game
+
+on:
+  workflow_run:
+    workflows: ["Real LuST Stage4 Coalition-Aware MAPPO"]
+    types: [completed]
+
+jobs:
+  counterfactual-game:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+
+      - name: Install SUMO, PyTorch and scientific stack
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sumo sumo-tools git python3-pip
+          python3 -m pip install --break-system-packages numpy scipy matplotlib
+          python3 -m pip install --break-system-packages torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download Stage4 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: real-lust-stage4-coalition-aware-pilot
+          path: stage4_results
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Fetch official LuST v2.0
+        run: |
+          git clone --depth 1 --branch v2.0 https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust rev-parse HEAD
+          sumo --version | head -n 3
+
+      - name: Run saved-state counterfactual coalition valuation
+        run: |
+          mkdir -p stage5_results
+          python3 research/lust_dynamic_coalition/counterfactual_coalition_real_lust.py             --scenario official_lust/scenario             --selection stage4_results/selected_9_tls.csv             --windows stage4_results/selected_operating_windows.csv             --gru stage4_results/gru_queue60s.pt             --policy stage4_results/coalition_aware_mappo.pt             --outdir stage5_results             --horizon 300             --seeds 8101             --lambda-resource 0.15
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          cp stage4_results/selected_9_tls.csv stage5_results/ 2>/dev/null || true
+          cp stage4_results/selected_operating_windows.csv stage5_results/ 2>/dev/null || true
+          cp stage4_results/gru_validation.json stage5_results/ 2>/dev/null || true
+          cp stage4_results/run_metadata.json stage5_results/coalition_policy_metadata.json 2>/dev/null || true
+          git -C official_lust rev-parse HEAD > stage5_results/official_lust_commit.txt || true
+          sumo --version > stage5_results/sumo_version.txt || true
+
+      - name: Upload real counterfactual game artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-lust-stage5-counterfactual-game
+          path: stage5_results/
+          if-no-files-found: warn
+          retention-days: 30
