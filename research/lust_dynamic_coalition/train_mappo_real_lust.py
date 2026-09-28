@@ -98,7 +98,7 @@ class LuST9Env:
     @property
     def n_agents(self): return len(self.tls)
     @property
-    def obs_dim(self): return 11
+    def obs_dim(self): return 12
     @property
     def n_actions(self): return 2
 
@@ -158,11 +158,9 @@ class LuST9Env:
                 phase/max(nph-1,1),
                 1.0 if phase_is_green(state) else 0.0,
                 np.clip(spent/60.0,0,3),
-                1.0,1.0,1.0, # TA/MO/VI availability; EC appended below as 1 for GC
+                1.0,1.0,1.0,1.0, # TA/MO/VI/EC availability in the grand-coalition pilot
             ],dtype=np.float32)
-            # replace final three+append to exact four stakeholder mask dimensions
-            o=np.concatenate([o[:8],np.ones(3,dtype=np.float32)])
-            # obs_dim is 11: 8 traffic/phase + 3 information channels for pilot GC
+            # obs_dim is 12: 8 normalized traffic/phase features + four stakeholder mask bits.
             obs.append(o)
         return np.stack(obs)
 
@@ -357,7 +355,7 @@ def main():
     random.seed(args.seed);np.random.seed(args.seed);torch.manual_seed(args.seed)
     selected=read_selected(args.selection); windows=read_windows(args.windows)
     conditions=[c for c in ["Off-peak","AM","Lunch","PM"] if c in windows]
-    agent=MAPPO(len(selected),11,2,seed=args.seed)
+    agent=MAPPO(len(selected),12,2,seed=args.seed)
     train_rows=[]
     t0=time.time()
     for ep in range(args.episodes):
