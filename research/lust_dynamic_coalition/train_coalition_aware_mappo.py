@@ -90,7 +90,7 @@ class QueueForecaster:
 
 class CoalitionEnv:
     def __init__(self,scenario,selection,forecaster,coalition,begin_s,control_s,seed,label,
-                 p_fcd=.20,p_v2x=.75,warmup_s=300):
+                 p_fcd=.20,p_v2x=.75,warmup_s=300,load_state=None,initial_history=None):
         self.scenario=os.path.abspath(scenario); self.selection=selection
         self.tls=[r["tls_id"] for r in selection]
         self.alias={r["tls_id"]:r["agent_alias"] for r in selection}
@@ -99,6 +99,8 @@ class CoalitionEnv:
         self.begin=max(0,int(begin_s-warmup_s)); self.control_start=int(begin_s); self.end=int(begin_s+control_s)
         self.seed=int(seed); self.label=label; self.p_fcd=p_fcd; self.p_v2x=p_v2x
         self.conn=None; self.decision_dt=10; self.min_green=10.0
+        self.load_state=load_state
+        self.initial_history=initial_history
         self.metrics=defaultdict(float); self.steps=0
         self.resource=defaultdict(float)
         self.prev_selected_vids=set()
@@ -108,26 +110,36 @@ class CoalitionEnv:
     def obs_dim(self): return 3+3+2+3+1+4
 
     def cmd(self):
-        return ["sumo","-c",os.path.join(self.scenario,"due.actuated.sumocfg"),
-                "--route-files",ROUTES,
-                "--additional-files","vtypes.add.xml,busstops.add.xml",
-                "--begin",str(self.begin),"--end",str(self.end),
-                "--seed",str(self.seed),"--xml-validation","never",
-                "--no-step-log","true","--time-to-teleport","600"]
+        cmd=["sumo","-c",os.path.join(self.scenario,"due.actuated.sumocfg"),
+             "--route-files",ROUTES,
+             "--additional-files","vtypes.add.xml,busstops.add.xml",
+             "--end",str(self.end),
+             "--seed",str(self.seed),"--xml-validation","never",
+             "--no-step-log","true","--time-to-teleport","600"]
+        if self.load_state:
+            cmd += ["--load-state",os.path.abspath(self.load_state)]
+        else:
+            cmd += ["--begin",str(self.begin)]
+        return cmd
 
     def start(self):
         self.forecaster.reset()
         traci.start(self.cmd(),label=self.label)
         self.conn=traci.getConnection(self.label)
-        # Warmup with native actuated control while building coalition-conditioned GRU history.
-        while self.conn.simulation.getTime()<self.control_start and self.conn.simulation.getMinExpectedNumber()>0:
-            self.conn.simulationStep()
-            t=self.conn.simulation.getTime()
-            if int(round(t))%10==0:
-                for tl in self.tls:
-                    raw=self.raw_state(tl)
-                    ch=self.channels(tl,raw,count_resources=False)
-                    self.forecaster.append(tl,ch["gru_input"])
+        if self.load_state and self.initial_history:
+            for tl,seq in self.initial_history.items():
+                for x in seq:
+                    self.forecaster.history[tl].append(np.asarray(x,dtype=np.float32))
+        else:
+            # Warmup with native actuated control while building coalition-conditioned GRU history.
+            while self.conn.simulation.getTime()<self.control_start and self.conn.simulation.getMinExpectedNumber()>0:
+                self.conn.simulationStep()
+                t=self.conn.simulation.getTime()
+                if int(round(t))%10==0:
+                    for tl in self.tls:
+                        raw=self.raw_state(tl)
+                        ch=self.channels(tl,raw,count_resources=False)
+                        self.forecaster.append(tl,ch["gru_input"])
         obs=self.observe()
         current=set()
         for tl in self.tls:
