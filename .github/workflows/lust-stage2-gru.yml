@@ -49,6 +49,9 @@ jobs:
         if: always()
         run: |
           cp baseline_results/selected_9_tls.csv stage2_results/ 2>/dev/null || true
+          cp baseline_results/selected_operating_windows.csv stage2_results/ 2>/dev/null || true
+          cp baseline_results/tls_condition_metrics.csv stage2_results/ 2>/dev/null || true
+          cp baseline_results/tls_robust_ranking.csv stage2_results/ 2>/dev/null || true
           cp baseline_results/run_metadata.json stage2_results/baseline_run_metadata.json 2>/dev/null || true
           git -C official_lust rev-parse HEAD > stage2_results/official_lust_commit.txt || true
           sumo --version > stage2_results/sumo_version.txt || true
