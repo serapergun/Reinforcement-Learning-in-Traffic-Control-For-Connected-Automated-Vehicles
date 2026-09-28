@@ -1,0 +1,50 @@
+name: Real LuST v2 Baseline
+
+on:
+  push:
+    branches:
+      - lust-dynamic-coalition-exp-20260928
+    paths:
+      - 'research/lust_dynamic_coalition/**'
+      - '.github/workflows/lust-real-baseline.yml'
+  workflow_dispatch:
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v4
+
+      - name: Install SUMO and Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sumo sumo-tools git python3-pip
+          python3 -m pip install --break-system-packages matplotlib
+
+      - name: Fetch official LuST v2.0
+        run: |
+          git clone --depth 1 --branch v2.0 https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust rev-parse HEAD
+          sumo --version | head -n 3
+
+      - name: Run 24-hour official DUE-actuated baseline
+        run: |
+          mkdir -p real_lust_results
+          python3 research/lust_dynamic_coalition/real_lust_baseline.py             --scenario official_lust/scenario             --results real_lust_results
+
+      - name: Record exact official LuST commit
+        if: always()
+        run: |
+          git -C official_lust rev-parse HEAD > real_lust_results/official_lust_commit.txt || true
+          sumo --version > real_lust_results/sumo_version.txt || true
+
+      - name: Upload experiment artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-lust-v2-baseline-results
+          path: real_lust_results/
+          if-no-files-found: warn
+          retention-days: 30
