@@ -48,6 +48,8 @@ jobs:
           cp stage2_results/selected_9_tls.csv stage3_results/ 2>/dev/null || true
           cp stage2_results/selected_operating_windows.csv stage3_results/ 2>/dev/null || true
           cp stage2_results/gru/gru_validation.json stage3_results/ 2>/dev/null || true
+          cp stage2_results/gru/gru_queue60s.pt stage3_results/ 2>/dev/null || true
+          cp stage2_results/gru/gru_training_history.csv stage3_results/ 2>/dev/null || true
           git -C official_lust rev-parse HEAD > stage3_results/official_lust_commit.txt || true
           sumo --version > stage3_results/sumo_version.txt || true
 
