@@ -6,12 +6,13 @@ on:
       - lust-dynamic-coalition-exp-20260928
     paths:
       - 'research/lust_dynamic_coalition/real_lust_baseline.py'
+      - '.github/workflows/lust-real-baseline.yml'
   workflow_dispatch:
 
 jobs:
   baseline:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 360
     steps:
       - name: Checkout experiment branch
         uses: actions/checkout@v4
