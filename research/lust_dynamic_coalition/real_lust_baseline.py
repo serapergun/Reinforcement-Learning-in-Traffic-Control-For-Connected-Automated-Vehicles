@@ -109,6 +109,8 @@ def run_sumo(scenario, results):
         "--device.emissions.probability", "1",
         "--tripinfo-output.write-unfinished", "true",
         "--seed", "42",
+        "--begin", "0",
+        "--end", "86400",
         "--xml-validation", "never",
         "--no-step-log", "true",
         "--duration-log.statistics", "true",
