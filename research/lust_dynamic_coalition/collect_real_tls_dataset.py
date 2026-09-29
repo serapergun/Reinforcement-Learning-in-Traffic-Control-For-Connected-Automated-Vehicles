@@ -27,13 +27,13 @@ def parse_net(net_path, tls_ids):
         if lid in lanes: incoming[tl].add(lid)
     return incoming
 
-def routes():
+def routes(scenario):
     return ",".join([
-        "buslines.rou.xml",
-        "DUERoutes/local.actuated.0.rou.xml",
-        "DUERoutes/local.actuated.1.rou.xml",
-        "DUERoutes/local.actuated.2.rou.xml",
-        "transit.rou.xml",
+        os.path.join(scenario,"buslines.rou.xml"),
+        os.path.join(scenario,"DUERoutes","local.actuated.0.rou.xml"),
+        os.path.join(scenario,"DUERoutes","local.actuated.1.rou.xml"),
+        os.path.join(scenario,"DUERoutes","local.actuated.2.rou.xml"),
+        os.path.join(scenario,"transit.rou.xml"),
     ])
 
 def main():
@@ -58,8 +58,11 @@ def main():
 
     cmd=[
         "sumo","-c",os.path.join(scenario,"due.actuated.sumocfg"),
-        "--route-files",routes(),
-        "--additional-files","vtypes.add.xml,busstops.add.xml",
+        "--route-files",routes(scenario),
+        "--additional-files",",".join([
+            os.path.join(scenario,"vtypes.add.xml"),
+            os.path.join(scenario,"busstops.add.xml"),
+        ]),
         "--seed",str(args.seed),
         "--begin","0",
         "--end","86400",
