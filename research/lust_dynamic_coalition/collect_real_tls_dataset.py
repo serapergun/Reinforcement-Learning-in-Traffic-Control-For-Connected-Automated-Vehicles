@@ -61,6 +61,8 @@ def main():
         "--route-files",routes(),
         "--additional-files","vtypes.add.xml,busstops.add.xml",
         "--seed",str(args.seed),
+        "--begin","0",
+        "--end","86400",
         "--xml-validation","never",
         "--no-step-log","true",
         "--duration-log.statistics","true",
@@ -79,7 +81,7 @@ def main():
     n=0
     with open(args.output,"w",newline="",encoding="utf-8") as f:
         w=csv.DictWriter(f,fieldnames=fields); w.writeheader()
-        while conn.simulation.getMinExpectedNumber()>0:
+        while conn.simulation.getMinExpectedNumber()>0 and conn.simulation.getTime() < 86400:
             conn.simulationStep()
             t=conn.simulation.getTime()
             if int(round(t)) % 10 != 0:
