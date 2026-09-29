@@ -1,0 +1,73 @@
+name: LuST Real TLS Dataset and GRU
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - 'research/lust_dynamic_coalition/collect_real_tls_dataset.py'
+      - 'research/lust_dynamic_coalition/train_real_gru.py'
+      - '.github/workflows/lust-dataset-gru.yml'
+
+jobs:
+  dataset-gru:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v4
+
+      - name: Install SUMO and Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sumo sumo-tools
+          python -m pip install --upgrade pip
+          pip install numpy torch
+
+      - name: Fetch official LuST v2.0
+        run: |
+          git clone --depth 1 https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust rev-parse HEAD > official_lust_commit.txt
+          sumo --version | head -n 1 > sumo_version.txt
+
+      - name: Download validated final baseline artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p baseline
+          gh run download 36567745991 -n real-lust-v2-baseline-results -D baseline
+          test -f baseline/selected_9_tls.csv
+          test -f baseline/selected_operating_windows.csv
+
+      - name: Collect real 24-hour nine-TLS dataset
+        run: |
+          mkdir -p stage2
+          python research/lust_dynamic_coalition/collect_real_tls_dataset.py \
+            --scenario official_lust/scenario \
+            --selection baseline/selected_9_tls.csv \
+            --output stage2/real_9tls_10s.csv \
+            --seed 42
+
+      - name: Train and validate GRU
+        run: |
+          python research/lust_dynamic_coalition/train_real_gru.py \
+            --data stage2/real_9tls_10s.csv \
+            --outdir stage2/gru \
+            --epochs 25 \
+            --seed 42
+
+      - name: Record provenance
+        if: always()
+        run: |
+          cp official_lust_commit.txt stage2/ 2>/dev/null || true
+          cp sumo_version.txt stage2/ 2>/dev/null || true
+          cp baseline/selected_9_tls.csv stage2/ 2>/dev/null || true
+          cp baseline/selected_operating_windows.csv stage2/ 2>/dev/null || true
+
+      - name: Upload Stage 2 artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-real-9tls-dataset-gru
+          path: stage2/
+          retention-days: 30
