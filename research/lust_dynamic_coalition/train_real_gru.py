@@ -24,7 +24,9 @@ def make_sequences(rows,L=30,h=6):
     for r in rows:
         by.setdefault(r["tls_id"],[]).append(r)
     X=[]; y=[]; times=[]; tls=[]
-    # Predictive inputs are limited to traffic-state variables that can be mapped to stakeholder data channels.\n    # CO2 is retained as an evaluation/resource outcome, not used as a GRU predictor.\n    feats=["veh_count","halting_count","mean_speed_mps","mean_occupancy_pct","waiting_time_s"]
+    # Predictive inputs are traffic-state variables available from stakeholder channels.
+    # CO2 remains an evaluation/resource outcome and is not a GRU predictor.
+    feats=["veh_count","halting_count","mean_speed_mps","mean_occupancy_pct","waiting_time_s"]
     for tid,rs in by.items():
         rs=sorted(rs,key=lambda x:x["time_s"])
         arr=np.array([[r[k] for k in feats] for r in rs],dtype=np.float32)
@@ -32,7 +34,10 @@ def make_sequences(rows,L=30,h=6):
         for i in range(L-1,len(rs)-h):
             if rs[i+h]["time_s"]-rs[i]["time_s"] > (h*10+1):
                 continue
-            X.append(arr[i-L+1:i+1]); y.append(target[i+h]); times.append(rs[i]["time_s"]); tls.append(tid)
+            X.append(arr[i-L+1:i+1])
+            y.append(target[i+h])
+            times.append(rs[i]["time_s"])
+            tls.append(tid)
     return np.asarray(X),np.asarray(y),np.asarray(times),np.asarray(tls),feats
 
 def main():
