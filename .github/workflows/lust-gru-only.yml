@@ -1,0 +1,75 @@
+name: LuST GRU Only
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - 'research/lust_dynamic_coalition/train_real_gru.py'
+      - '.github/workflows/lust-gru-only.yml'
+
+jobs:
+  gru:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v4
+
+      - name: Install Python dependencies
+        run: pip install numpy torch
+
+      - name: Download validated Stage 2 dataset artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p stage2_source
+          gh run download 36616086201 -n lust-real-9tls-dataset-gru -D stage2_source
+          find stage2_source -maxdepth 3 -type f -print
+          test -f stage2_source/real_9tls_10s.csv || test -f stage2_source/stage2/real_9tls_10s.csv
+
+      - name: Locate and validate dataset
+        run: |
+          DATA=$(find stage2_source -name real_9tls_10s.csv -print -quit)
+          test -n "$DATA"
+          echo "DATA=$DATA" >> "$GITHUB_ENV"
+          python - <<'PY'
+          import csv, os
+          p=os.environ["DATA"]
+          rows=list(csv.DictReader(open(p,newline="",encoding="utf-8")))
+          assert len(rows)==77760, len(rows)
+          tids=sorted(set(r["tls_id"] for r in rows))
+          expected=sorted(["-10160","-29460","-3054","-5704","-8604","-9194","-29558","-5432","-21042"])
+          assert tids==expected,(tids,expected)
+          times=[float(r["time_s"]) for r in rows]
+          assert min(times)==10.0 and max(times)==86400.0,(min(times),max(times))
+          for tid in tids:
+              tr=sorted(float(r["time_s"]) for r in rows if r["tls_id"]==tid)
+              assert len(tr)==8640,(tid,len(tr))
+              assert all(abs((b-a)-10.0)<1e-9 for a,b in zip(tr,tr[1:])),tid
+          print("Validated 77,760 rows, 9 TLS, 10-s coverage through 86,400 s")
+          PY
+
+      - name: Train and validate GRU
+        run: |
+          python research/lust_dynamic_coalition/train_real_gru.py \
+            --data "$DATA" \
+            --outdir gru_results \
+            --epochs 25 \
+            --seed 42
+
+      - name: Preserve provenance
+        run: |
+          cp stage2_source/official_lust_commit.txt gru_results/ 2>/dev/null || true
+          cp stage2_source/sumo_version.txt gru_results/ 2>/dev/null || true
+          cp stage2_source/selected_9_tls.csv gru_results/ 2>/dev/null || true
+          cp stage2_source/selected_operating_windows.csv gru_results/ 2>/dev/null || true
+          echo "source_dataset_run=36616086201" > gru_results/gru_run_provenance.txt
+          echo "expected_baseline_lust_commit=c4bd5bd3751d426d42a9a1749c815e47ea188549" >> gru_results/gru_run_provenance.txt
+
+      - name: Upload GRU results
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-real-gru-results
+          path: gru_results/
+          retention-days: 30
