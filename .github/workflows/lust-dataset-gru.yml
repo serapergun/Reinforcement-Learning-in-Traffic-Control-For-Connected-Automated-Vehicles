@@ -6,7 +6,6 @@ on:
     branches: [lust-dynamic-coalition-exp-20260928]
     paths:
       - 'research/lust_dynamic_coalition/collect_real_tls_dataset.py'
-      - 'research/lust_dynamic_coalition/train_real_gru.py'
       - '.github/workflows/lust-dataset-gru.yml'
 
 jobs:
