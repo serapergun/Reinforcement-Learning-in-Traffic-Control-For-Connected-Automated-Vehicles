@@ -1,0 +1,131 @@
+name: LuST MAPPO Guarded
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - 'research/lust_dynamic_coalition/train_mappo_real_lust.py'
+      - '.github/workflows/lust-mappo-guarded.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile guard
+        run: python -m py_compile research/lust_dynamic_coalition/train_mappo_real_lust.py
+      - name: Install pinned runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sumo sumo-tools
+          python -m pip install --upgrade pip
+          pip install numpy torch
+          sumo --version | head -n 1
+          sumo --version | head -n 1 | grep -F "1.18.0"
+      - name: Fetch and pin LuST
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+          test "$(git -C official_lust rev-parse HEAD)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+      - name: Download validated baseline selection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p baseline
+          gh run download 36567745991 -n real-lust-v2-baseline-results -D baseline
+          test -s baseline/selected_9_tls.csv
+          test -s baseline/selected_operating_windows.csv
+      - name: Validate selection and windows
+        run: |
+          python - <<'PY'
+          import csv
+          s=list(csv.DictReader(open("baseline/selected_9_tls.csv")))
+          assert len(s)==9 and len({r["tls_id"] for r in s})==9
+          w=list(csv.DictReader(open("baseline/selected_operating_windows.csv")))
+          assert {r["condition"] for r in w}>={"Off-peak","AM","Lunch","PM"}
+          print("selection/windows PASS")
+          PY
+      - name: Short MAPPO smoke test
+        run: |
+          rm -rf smoke
+          python research/lust_dynamic_coalition/train_mappo_real_lust.py             --scenario official_lust/scenario             --selection baseline/selected_9_tls.csv             --windows baseline/selected_operating_windows.csv             --outdir smoke --episodes 4 --train-control-s 120 --eval-control-s 120 --eval-seeds 9901 --seed 42
+          test -s smoke/mappo_lust9.pt
+          test -s smoke/training_history.csv
+          test -s smoke/evaluation_raw.csv
+          test -s smoke/evaluation_summary.csv
+          test -s smoke/run_metadata.json
+      - name: Upload smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-mappo-smoke
+          path: smoke/
+          retention-days: 14
+
+  full:
+    needs: smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sumo sumo-tools
+          python -m pip install --upgrade pip
+          pip install numpy torch
+          sumo --version | head -n 1 | grep -F "1.18.0"
+      - name: Fetch exact LuST commit
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+          git -C official_lust rev-parse HEAD > official_lust_commit.txt
+          test "$(cat official_lust_commit.txt)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+          sumo --version | head -n 1 > sumo_version.txt
+      - name: Download baseline inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p baseline
+          gh run download 36567745991 -n real-lust-v2-baseline-results -D baseline
+      - name: Full MAPPO train and 5-seed evaluation
+        run: |
+          rm -rf mappo
+          python research/lust_dynamic_coalition/train_mappo_real_lust.py             --scenario official_lust/scenario             --selection baseline/selected_9_tls.csv             --windows baseline/selected_operating_windows.csv             --outdir mappo --episodes 48 --train-control-s 900 --eval-control-s 3600             --eval-seeds 9001,9002,9003,9004,9005 --seed 42
+          test -s mappo/mappo_lust9.pt
+          test -s mappo/training_history.csv
+          test -s mappo/evaluation_raw.csv
+          test -s mappo/evaluation_summary.csv
+          test -s mappo/run_metadata.json
+      - name: Result integrity guard
+        run: |
+          python - <<'PY'
+          import csv,math
+          r=list(csv.DictReader(open("mappo/evaluation_raw.csv")))
+          assert len(r)==40, len(r)
+          assert {x["controller"] for x in r}=={"Actuated","MAPPO"}
+          assert {x["condition"] for x in r}=={"Off-peak","AM","Lunch","PM"}
+          assert len({x["seed"] for x in r})==5
+          for x in r:
+              for k in ["mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles","CO2_kg_selected_approaches","mean_reward"]:
+                  assert math.isfinite(float(x[k])),(k,x)
+          print("full result integrity PASS")
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          cp official_lust_commit.txt mappo/ 2>/dev/null || true
+          cp sumo_version.txt mappo/ 2>/dev/null || true
+          cp baseline/selected_9_tls.csv mappo/ 2>/dev/null || true
+          cp baseline/selected_operating_windows.csv mappo/ 2>/dev/null || true
+          echo "baseline_run=36567745991" > mappo/provenance.txt
+          echo "GRU_v2_run=36710444029; EC forecast decision=persistence baseline" >> mappo/provenance.txt
+      - name: Upload full MAPPO results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-mappo-5seed-results
+          path: mappo/
+          retention-days: 30
