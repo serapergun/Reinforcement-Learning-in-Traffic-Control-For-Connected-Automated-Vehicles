@@ -1,0 +1,76 @@
+name: LuST GRU v2 Residual
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - 'research/lust_dynamic_coalition/train_gru_v2_residual.py'
+      - '.github/workflows/lust-gru-v2.yml'
+
+jobs:
+  validate-and-train:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python compile guard
+        run: python -m py_compile research/lust_dynamic_coalition/train_gru_v2_residual.py
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy torch
+      - name: Download validated dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p source
+          gh run download 36616086201 -n lust-real-9tls-dataset-gru -D source
+          DATA=$(find source -name real_9tls_10s.csv -print -quit)
+          test -n "$DATA"
+          echo "DATA=$DATA" >> "$GITHUB_ENV"
+      - name: Independent dataset integrity guard
+        run: |
+          python - <<'PY'
+          import csv,os
+          p=os.environ["DATA"];r=list(csv.DictReader(open(p,newline="",encoding="utf-8")))
+          assert len(r)==77760
+          exp=sorted(["-10160","-29460","-3054","-5704","-8604","-9194","-29558","-5432","-21042"])
+          assert sorted(set(x["tls_id"] for x in r))==exp
+          for t in exp:
+              ts=sorted(float(x["time_s"]) for x in r if x["tls_id"]==t)
+              assert len(ts)==8640 and ts[0]==10 and ts[-1]==86400
+              assert all(b-a==10 for a,b in zip(ts,ts[1:]))
+          print("dataset integrity PASS")
+          PY
+      - name: Smoke test full model pipeline
+        run: |
+          rm -rf smoke
+          python research/lust_dynamic_coalition/train_gru_v2_residual.py --data "$DATA" --outdir smoke --epochs 2 --patience 2 --seed 42 --smoke
+          test -s smoke/gru_v2_validation.json
+          test -s smoke/gru_v2_predictions.csv
+          test -s smoke/gru_v2_residual.pt
+      - name: Full GRU v2 training
+        run: |
+          rm -rf gru_v2
+          python research/lust_dynamic_coalition/train_gru_v2_residual.py --data "$DATA" --outdir gru_v2 --epochs 40 --patience 7 --seed 42
+          test -s gru_v2/gru_v2_validation.json
+          test -s gru_v2/gru_v2_history.csv
+          test -s gru_v2/gru_v2_predictions.csv
+          test -s gru_v2/gru_v2_residual.pt
+      - name: Preserve provenance
+        if: always()
+        run: |
+          cp source/official_lust_commit.txt gru_v2/ 2>/dev/null || true
+          cp source/sumo_version.txt gru_v2/ 2>/dev/null || true
+          cp source/selected_9_tls.csv gru_v2/ 2>/dev/null || true
+          cp source/selected_operating_windows.csv gru_v2/ 2>/dev/null || true
+          echo "source_dataset_run=36616086201" > gru_v2/gru_v2_provenance.txt
+          echo "baseline_lust_commit=c4bd5bd3751d426d42a9a1749c815e47ea188549" >> gru_v2/gru_v2_provenance.txt
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-gru-v2-residual-results
+          path: gru_v2/
+          retention-days: 30
