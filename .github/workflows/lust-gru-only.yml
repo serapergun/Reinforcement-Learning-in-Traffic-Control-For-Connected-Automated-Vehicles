@@ -33,6 +33,7 @@ jobs:
           DATA=$(find stage2_source -name real_9tls_10s.csv -print -quit)
           test -n "$DATA"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
+          export DATA
           python - <<'PY'
           import csv, os
           p=os.environ["DATA"]
