@@ -1,0 +1,103 @@
+name: LuST MAPPO v2 Residual Guarded
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - 'research/lust_dynamic_coalition/train_mappo_v2_residual.py'
+      - '.github/workflows/lust-mappo-v2.yml'
+jobs:
+  pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile guard
+        run: python -m py_compile research/lust_dynamic_coalition/train_mappo_v2_residual.py
+      - name: Install pinned runtime
+        run: |
+          sudo apt-get update && sudo apt-get install -y sumo sumo-tools
+          pip install numpy torch
+          sumo --version | head -n1 | grep -F "1.18.0"
+      - name: Pin LuST
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+          test "$(git -C official_lust rev-parse HEAD)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+      - name: Baseline inputs
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          mkdir baseline
+          gh run download 36567745991 -n real-lust-v2-baseline-results -D baseline
+      - name: MAPPO-v2 pilot
+        run: |
+          python research/lust_dynamic_coalition/train_mappo_v2_residual.py --scenario official_lust/scenario             --selection baseline/selected_9_tls.csv --windows baseline/selected_operating_windows.csv             --outdir pilot --episodes 32 --train-control-s 600 --eval-control-s 600             --eval-seeds 9101,9102,9103 --seed 42
+      - name: Pilot integrity and improvement gate
+        run: |
+          python - <<'PY'
+          import csv,math
+          r=list(csv.DictReader(open("pilot/evaluation_raw.csv")))
+          assert len(r)==24
+          for x in r:
+            for k in ["mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles","CO2_kg_selected_approaches","mean_reward"]:
+              assert math.isfinite(float(x[k]))
+          # Gate on aggregate queue/wait: residual policy must show at least one improvement
+          # and may not degrade the other by >10% before expensive full training.
+          def mean(ctrl,k):
+            z=[float(x[k]) for x in r if x["controller"]==ctrl]; return sum(z)/len(z)
+          bh,bw=mean("Actuated","mean_halting_vehicles"),mean("Actuated","mean_waiting_time_lane_sum_s")
+          mh,mw=mean("MAPPO","mean_halting_vehicles"),mean("MAPPO","mean_waiting_time_lane_sum_s")
+          dh=(mh/bh-1)*100; dw=(mw/bw-1)*100
+          print({"halting_pct":dh,"waiting_pct":dw})
+          assert min(dh,dw)<0, "No pilot improvement over actuated baseline"
+          assert max(dh,dw)<=10, "Pilot degradation exceeds 10% guard"
+          PY
+      - name: Upload pilot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: lust-mappo-v2-pilot, path: pilot/, retention-days: 30}
+  full:
+    needs: pilot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install runtime and pin LuST
+        run: |
+          sudo apt-get update && sudo apt-get install -y sumo sumo-tools
+          pip install numpy torch
+          sumo --version | head -n1 | grep -F "1.18.0"
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Baseline inputs
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          mkdir baseline
+          gh run download 36567745991 -n real-lust-v2-baseline-results -D baseline
+      - name: Full MAPPO-v2
+        run: |
+          python research/lust_dynamic_coalition/train_mappo_v2_residual.py --scenario official_lust/scenario             --selection baseline/selected_9_tls.csv --windows baseline/selected_operating_windows.csv             --outdir full --episodes 160 --train-control-s 900 --eval-control-s 3600             --eval-seeds 9201,9202,9203,9204,9205 --seed 42
+      - name: Full integrity
+        run: |
+          python - <<'PY'
+          import csv,math
+          r=list(csv.DictReader(open("full/evaluation_raw.csv"))); assert len(r)==40
+          assert len({x["seed"] for x in r})==5
+          assert {x["condition"] for x in r}=={"Off-peak","AM","Lunch","PM"}
+          assert {x["controller"] for x in r}=={"Actuated","MAPPO"}
+          for x in r:
+            for k in ["mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles","CO2_kg_selected_approaches","mean_reward"]:
+              assert math.isfinite(float(x[k]))
+          PY
+      - name: Provenance
+        if: always()
+        run: |
+          echo c4bd5bd3751d426d42a9a1749c815e47ea188549 > full/official_lust_commit.txt
+          sumo --version | head -n1 > full/sumo_version.txt
+          echo "baseline_run=36567745991" > full/provenance.txt
+          echo "GRU_v2_run=36710444029; EC=persistence forecast" >> full/provenance.txt
+          echo "MAPPO_v1_run=36711984657; v2=residual native-control policy" >> full/provenance.txt
+      - name: Upload full
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: lust-mappo-v2-5seed-results, path: full/, retention-days: 30}
