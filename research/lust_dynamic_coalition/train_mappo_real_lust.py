@@ -61,10 +61,13 @@ def parse_net_incoming(net_path,tls_ids):
     return {k:sorted(v) for k,v in inc.items()}
 
 def make_cmd(scenario,begin_s,end_s,seed):
+    scenario=os.path.abspath(scenario)
+    routes=",".join(os.path.join(scenario,p) for p in ROUTES.split(","))
+    additional=",".join(os.path.join(scenario,p) for p in ["vtypes.add.xml","busstops.add.xml"])
     return [
         "sumo","-c",os.path.join(scenario,"due.actuated.sumocfg"),
-        "--route-files",ROUTES,
-        "--additional-files","vtypes.add.xml,busstops.add.xml",
+        "--route-files",routes,
+        "--additional-files",additional,
         "--begin",str(max(0,int(begin_s))),
         "--end",str(int(end_s)),
         "--seed",str(seed),
@@ -348,12 +351,19 @@ def main():
     ap.add_argument("--episodes",type=int,default=48)
     ap.add_argument("--train-control-s",type=int,default=900)
     ap.add_argument("--eval-control-s",type=int,default=3600)
-    ap.add_argument("--eval-seeds",default="9001,9002,9003")
+    ap.add_argument("--eval-seeds",default="9001,9002,9003,9004,9005")
     ap.add_argument("--seed",type=int,default=42)
     args=ap.parse_args()
     os.makedirs(args.outdir,exist_ok=True)
     random.seed(args.seed);np.random.seed(args.seed);torch.manual_seed(args.seed)
     selected=read_selected(args.selection); windows=read_windows(args.windows)
+    assert len(selected)==9, f"Expected 9 TLS agents, got {len(selected)}"
+    assert len(set(r["tls_id"] for r in selected))==9, "Duplicate TLS IDs in selection"
+    scenario_abs=os.path.abspath(args.scenario)
+    for req in ["due.actuated.sumocfg","lust.net.xml","vtypes.add.xml","busstops.add.xml"]:
+        assert os.path.isfile(os.path.join(scenario_abs,req)), f"Missing scenario file: {req}"
+    for rp in ROUTES.split(","):
+        assert os.path.isfile(os.path.join(scenario_abs,rp)), f"Missing route file: {rp}"
     conditions=[c for c in ["Off-peak","AM","Lunch","PM"] if c in windows]
     agent=MAPPO(len(selected),12,2,seed=args.seed)
     train_rows=[]
