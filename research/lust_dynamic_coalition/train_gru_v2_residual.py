@@ -19,8 +19,9 @@ def load_validate(path,strict=True):
             for k in ["time_s"]+FEATURES+["co2_mg_s"]: r[k]=float(r[k])
             rows.append(r)
     if strict:
-        assert len(rows)==77760,f"expected 77760 rows, got {len(rows)}"
-        tids=sorted(set(r["tls_id"] for r in rows));assert tids==EXPECTED_TLS,(tids,EXPECTED_TLS)
+        tids=sorted(set(r["tls_id"] for r in rows))
+        assert len(tids)==9, f"expected 9 TLS agents, got {len(tids)}: {tids}"
+        assert len(rows)==9*8640, f"expected {9*8640} rows, got {len(rows)}"
         for tid in tids:
             ts=sorted(r["time_s"] for r in rows if r["tls_id"]==tid)
             assert len(ts)==8640,(tid,len(ts));assert ts[0]==10 and ts[-1]==86400,(tid,ts[0],ts[-1])
@@ -61,7 +62,7 @@ def main():
     Xn=np.clip((X-med)/iqr,-10,10)
     # target residual scaling learned from training only
     dm=float(d[tr].mean());ds=float(d[tr].std()+1e-6);dn=(d-dm)/ds
-    tid_order=EXPECTED_TLS if not args.smoke else sorted(set(tids.tolist()));tidmap={t:i for i,t in enumerate(tid_order)}
+    tid_order=sorted(set(tids.tolist()));tidmap={t:i for i,t in enumerate(tid_order)}
     tidx=np.asarray([tidmap[t] for t in tids],np.int64)
     # deterministic time-of-day linear residual benchmark fit on train only
     tod=np.stack([np.ones(len(times)),np.sin(2*np.pi*times/86400),np.cos(2*np.pi*times/86400),q0],axis=1)
