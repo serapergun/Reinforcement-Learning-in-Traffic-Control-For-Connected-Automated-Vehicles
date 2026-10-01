@@ -120,3 +120,38 @@ This early result is substantially more plausible than the SUMO 1.18 behavior,
 but publication validity remains gated on the complete official `due.actuated`
 reproduction. No legacy-derived final performance claim is made until the full
 run satisfies the predefined compatibility guards.
+
+
+## Publication gate PASSED: exact LuST v2.0 reproduction with SUMO 0.27.0
+
+GitHub Actions run **36868507185** completed successfully using the official LuST
+v2.0 commit `c4bd5bd3751d426d42a9a1749c815e47ea188549` and SUMO **0.27.0**.
+
+The complete `due.actuated.sumocfg` run reproduced the historical LuST reference
+**exactly**:
+
+| Quantity | Reproduced | LuST reference | Difference |
+|---|---:|---:|---:|
+| Simulation end time | 88,375 s | 88,375 s | 0 |
+| Loaded vehicles | 288,250 | 288,250 | 0 |
+| Inserted vehicles | 284,349 | 284,349 | 0 |
+| Teleports | 767 | 767 | 0 |
+| Vehicles still running | 0 | 0 | 0 |
+| Waiting vehicles | 0 | 0 | 0 |
+
+The run ended because **all vehicles had left the simulation**. The teleport
+breakdown was 7 collision, 224 jam, 378 yield, and 158 wrong-lane teleports.
+
+This exact match resolves the earlier SUMO-version compatibility blocker.
+All publication-facing LuST experiments must now be generated on this validated
+SUMO 0.27.0 path. The previous SUMO 1.18.0 results remain development/debugging
+results only.
+
+A consolidated workflow, `LuST Legacy Publication Pipeline`, has been added to
+execute the next publication sequence on the validated simulator path:
+
+1. full-day congestion-based selection of nine actual LuST TLS agents;
+2. 10-s, 24-h state dataset collection for the selected nine agents;
+3. residual-GRU training and persistence-baseline comparison;
+4. guarded residual MAPPO training and paired actuated-controller evaluation;
+5. provenance and machine-readable publication gates.
