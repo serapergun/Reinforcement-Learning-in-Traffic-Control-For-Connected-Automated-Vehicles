@@ -1,0 +1,65 @@
+name: LuST Legacy TLS Selection
+
+on:
+  workflow_run:
+    workflows: ["LuST Legacy SUMO 0.27 Validation"]
+    types: [completed]
+
+jobs:
+  select:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool pkg-config libxerces-c-dev git python3 python3-pip
+          python3 -m pip install --user numpy matplotlib
+
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version | tee ../../sumo027_version.txt
+          grep -F "Version 0.27.0" ../../sumo027_version.txt
+
+      - name: Pin official LuST v2.0
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+          test "$(git -C official_lust rev-parse HEAD)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+
+      - name: Run legacy-compatible TLS selection baseline
+        run: |
+          mkdir -p legacy_selection_results
+          python3 research/lust_dynamic_coalition/legacy_lust_selection.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --results "$GITHUB_WORKSPACE/legacy_selection_results"
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          cp sumo027_version.txt legacy_selection_results/ 2>/dev/null || true
+          echo c4bd5bd3751d426d42a9a1749c815e47ea188549 > legacy_selection_results/official_lust_commit.txt
+          echo v0_27_0 > legacy_selection_results/sumo_tag.txt
+          echo 7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b > legacy_selection_results/sumo_tag_commit.txt
+
+      - name: Upload selected TLS artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-legacy-sumo027-tls-selection
+          path: legacy_selection_results/
+          if-no-files-found: warn
+          retention-days: 30
