@@ -1,0 +1,147 @@
+name: LuST Legacy Publication Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-legacy-publication-pipeline.yml'
+
+jobs:
+  publication-pipeline:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool pkg-config libxerces-c-dev git python3 python3-pip
+          python3 -m pip install --user numpy matplotlib
+          python3 -m pip install --user torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version | tee ../../sumo027_version.txt
+          grep -F "Version 0.27.0" ../../sumo027_version.txt
+
+      - name: Pin official LuST v2.0
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+          test "$(git -C official_lust rev-parse HEAD)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+
+      - name: Select nine TLS on legacy-compatible full-day baseline
+        run: |
+          mkdir -p publication_pipeline/selection
+          python3 research/lust_dynamic_coalition/legacy_lust_selection.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --results "$GITHUB_WORKSPACE/publication_pipeline/selection"
+
+      - name: Validate selection artifact
+        run: |
+          python3 - <<'PY'
+          import csv, pathlib
+          p=pathlib.Path("publication_pipeline/selection/selected_9_tls.csv")
+          rows=list(csv.DictReader(p.open()))
+          assert len(rows)==9, len(rows)
+          assert len({r["tls_id"] for r in rows})==9
+          assert all(r["agent_alias"]==f"A{i+1}" for i,r in enumerate(rows))
+          print("selected TLS:", [(r["agent_alias"],r["tls_id"],r["CI_robust"]) for r in rows])
+          PY
+
+      - name: Collect full-day nine-TLS 10-second dataset
+        run: |
+          mkdir -p publication_pipeline/dataset
+          python3 research/lust_dynamic_coalition/collect_legacy_tls_dataset.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/publication_pipeline/selection/selected_9_tls.csv" \
+            --output "$GITHUB_WORKSPACE/publication_pipeline/dataset/legacy_9tls_state_10s.csv" \
+            --seed 42
+
+      - name: Train and validate residual GRU
+        run: |
+          mkdir -p publication_pipeline/gru
+          python3 research/lust_dynamic_coalition/train_gru_v2_residual.py \
+            --data publication_pipeline/dataset/legacy_9tls_state_10s.csv \
+            --outdir publication_pipeline/gru \
+            --epochs 40 --patience 7 --seed 42
+
+      - name: GRU publication gate
+        run: |
+          python3 - <<'PY'
+          import json
+          d=json.load(open("publication_pipeline/gru/gru_v2_validation.json"))
+          p=d["persistence"];g=d["GRU_v2_residual"]
+          print("Persistence:",p)
+          print("GRU:",g)
+          improvement=(p["MAE"]-g["MAE"])/max(p["MAE"],1e-12)
+          print("GRU MAE relative improvement:",improvement)
+          # Do not fail the whole pipeline when persistence wins; record the
+          # result and prevent unsupported DT-prediction improvement claims.
+          json.dump({"gru_beats_persistence_mae": bool(g["MAE"]<p["MAE"]),
+                     "mae_relative_improvement": improvement},
+                    open("publication_pipeline/gru/gru_gate.json","w"),indent=2)
+          PY
+
+      - name: Train guarded residual MAPPO pilot
+        run: |
+          mkdir -p publication_pipeline/mappo
+          python3 research/lust_dynamic_coalition/train_mappo_legacy_residual.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/publication_pipeline/selection/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/publication_pipeline/selection/selected_operating_windows.csv" \
+            --outdir "$GITHUB_WORKSPACE/publication_pipeline/mappo" \
+            --episodes 32 --train-s 900 --eval-s 1800 \
+            --eval-seeds 9001,9002,9003 --seed 42
+
+      - name: MAPPO diagnostic gate
+        run: |
+          python3 - <<'PY'
+          import csv,json
+          rows=list(csv.DictReader(open("publication_pipeline/mappo/evaluation_summary.csv")))
+          d={(r["controller"],r["condition"]):r for r in rows}
+          result={}
+          for cond in sorted({r["condition"] for r in rows}):
+              a=d[("Actuated",cond)];m=d[("MAPPO-residual",cond)]
+              result[cond]={}
+              for key in ["mean_halting_vehicles_mean","mean_waiting_time_lane_sum_s_mean","CO2_kg_selected_approaches_mean"]:
+                  av=float(a[key]);mv=float(m[key])
+                  result[cond][key+"_rel_improvement"]=(av-mv)/max(abs(av),1e-12)
+          json.dump(result,open("publication_pipeline/mappo/mappo_gate.json","w"),indent=2)
+          print(json.dumps(result,indent=2))
+          PY
+
+      - name: Preserve exact provenance
+        if: always()
+        run: |
+          cp sumo027_version.txt publication_pipeline/ 2>/dev/null || true
+          echo c4bd5bd3751d426d42a9a1749c815e47ea188549 > publication_pipeline/official_lust_commit.txt
+          echo v0_27_0 > publication_pipeline/sumo_tag.txt
+          echo 7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b > publication_pipeline/sumo_tag_commit.txt
+          echo 36868507185 > publication_pipeline/validated_reference_run_id.txt
+          echo "Exact reproduction: end=88375 inserted=284349 loaded=288250 teleports=767 running=0 waiting=0" > publication_pipeline/validated_reference_result.txt
+
+      - name: Upload publication pipeline artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-sumo027-publication-pipeline
+          path: publication_pipeline/
+          if-no-files-found: warn
+          retention-days: 30
