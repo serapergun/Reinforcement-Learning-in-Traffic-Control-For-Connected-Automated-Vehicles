@@ -5,7 +5,7 @@ on:
     branches: [lust-dynamic-coalition-exp-20260928]
     paths:
       - 'research/lust_dynamic_coalition/train_mappo_v5_masked.py'
-      - '.github/workflows/lust-mappo-v4.yml'
+      - '.github/workflows/lust-mappo-v5.yml'
 jobs:
   pilot:
     runs-on: ubuntu-24.04
