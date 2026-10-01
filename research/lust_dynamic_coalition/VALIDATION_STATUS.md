@@ -155,3 +155,35 @@ execute the next publication sequence on the validated simulator path:
 3. residual-GRU training and persistence-baseline comparison;
 4. guarded residual MAPPO training and paired actuated-controller evaluation;
 5. provenance and machine-readable publication gates.
+
+
+## Full LuST v2.0 reproduction passed
+
+The compatibility gate has now been passed with the pinned official LuST v2.0
+commit `c4bd5bd3751d426d42a9a1749c815e47ea188549` and SUMO **0.27.0**.
+
+The complete `due.actuated.sumocfg` run reproduced the bundled LuST reference
+**exactly**:
+
+| Quantity | Reproduced | LuST bundled reference |
+|---|---:|---:|
+| Simulation end time | 88,375 s | 88,375 s |
+| Loaded vehicles | 288,250 | 288,250 |
+| Inserted vehicles | 284,349 | 284,349 |
+| Vehicles still running | 0 | 0 |
+| Waiting vehicles | 0 | 0 |
+| Teleports | 767 | 767 |
+| Collision teleports | 7 | 7 (reported in reproduced log) |
+| Jam teleports | 224 | 224 (reported in reproduced log) |
+| Yield teleports | 378 | 378 (reported in reproduced log) |
+| Wrong-lane teleports | 158 | 158 (reported in reproduced log) |
+
+For the two primary numerical compatibility checks used by the workflow,
+`inserted_rel_error = 0.0` and `end_rel_error = 0.0`.
+
+This removes the simulator-version compatibility blocker. From this point
+forward, publication-candidate LuST experiments must use the validated
+SUMO-0.27 path (or separately re-establish an equally strict compatibility
+gate for another simulator version). The earlier SUMO-1.18 experiments remain
+engineering/debugging evidence only and must not be mixed into final empirical
+tables.
