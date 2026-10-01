@@ -320,7 +320,8 @@ class MAPPO:
 
     def update(self,traj,epochs=5):
         obs=np.asarray([x["obs"] for x in traj],np.float32)
-        act=np.asarray([x["act"] for x in traj],np.int64)\n        masks=np.asarray([x["mask"] for x in traj],bool)
+        act=np.asarray([x["act"] for x in traj],np.int64)
+        masks=np.asarray([x["mask"] for x in traj],bool)
         oldlp=np.asarray([x["logp"] for x in traj],np.float32)
         rew=np.asarray([x["rew"] for x in traj],np.float32)
         val=np.asarray([x["val"] for x in traj],np.float32)
