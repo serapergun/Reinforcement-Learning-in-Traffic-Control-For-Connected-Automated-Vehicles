@@ -107,7 +107,7 @@ class LuST9Env:
         self.reject_min_green=0
         self.extension_s=(0.0,3.0,6.0)
         self.cooldown_s=20.0
-        self.pressure_threshold=0.08
+        self.pressure_threshold=0.03
 
     @property
     def n_agents(self): return len(self.tls)
@@ -421,7 +421,7 @@ def main():
           "gamma":.99,"gae_lambda":.95,"ppo_clip":.2,"actor_lr":3e-4,"critic_lr":3e-4,
           "decision_interval_s":10,"min_green_s":10,
           "action_0":"native actuated/no intervention","action_1":"+3 s remaining green","action_2":"+6 s remaining green",
-          "supervisory_gate":{"cooldown_s":20,"pressure_threshold":0.08,"true_remaining_time_extension":true},
+          "supervisory_gate":{"cooldown_s":20,"pressure_threshold":0.03,"true_remaining_time_extension":True},
           "training_conditions":conditions,"wall_time_s":time.time()-t0}
     agent.save(os.path.join(args.outdir,"mappo_lust9.pt"),meta)
     write_rows(os.path.join(args.outdir,"training_history.csv"),train_rows)
