@@ -116,10 +116,13 @@ In SUMO 0.27 the teleports summary line is omitted when the count is zero, so
 the compatibility parser has been corrected to interpret an omitted line as
 zero rather than as missing data.
 
-This early result is substantially more plausible than the SUMO 1.18 behavior,
-but publication validity remains gated on the complete official `due.actuated`
-reproduction. No legacy-derived final performance claim is made until the full
-run satisfies the predefined compatibility guards.
+The complete official `due.actuated` reproduction has now passed the
+predefined compatibility guards exactly. Under SUMO 0.27.0, the reproduced run
+ended at 88,375 s with 284,349 inserted vehicles from 288,250 loaded records,
+767 teleports, and zero vehicles running or waiting at termination. These values
+match the LuST bundled reference summary exactly (0% relative error for inserted
+vehicles and end time). The simulator-compatibility publication gate is
+therefore PASSED for the SUMO 0.27.0 path.
 
 
 ## Publication gate PASSED: exact LuST v2.0 reproduction with SUMO 0.27.0
@@ -187,3 +190,35 @@ SUMO-0.27 path (or separately re-establish an equally strict compatibility
 gate for another simulator version). The earlier SUMO-1.18 experiments remain
 engineering/debugging evidence only and must not be mixed into final empirical
 tables.
+
+
+## Validated nine-TLS selection (SUMO 0.27.0)
+
+A separate full-day selection run using the validated simulator path completed
+successfully. The selected connected nine-intersection subnetwork is:
+
+| Alias | LuST TLS ID | Robust CI | Incoming lanes |
+|---|---:|---:|---:|
+| A1 | -17662 | 0.727922 | 8 |
+| A2 | -13722 | 0.570303 | 8 |
+| A3 | -26466 | 0.482289 | 8 |
+| A4 | -28210 | 0.363008 | 6 |
+| A5 | -16312 | 0.629143 | 5 |
+| A6 | -17612 | 0.194458 | 8 |
+| A7 | -18372 | 0.055226 | 8 |
+| A8 | -1458 | 0.175220 | 8 |
+| A9 | -14740 | 0.149201 | 6 |
+
+The operating hours selected from the full-day congestion profile are:
+
+- Off-peak: 02:00-03:00
+- AM peak: 08:00-09:00
+- Lunch: 13:00-14:00
+- PM peak: 18:00-19:00
+
+The PM window has the largest aggregate E2 halting-duration burden in the
+defined peak windows (1,375,906 s), followed by AM (908,692 s) and Lunch
+(621,307 s). Off-peak 02:00-03:00 has 6,626 s.
+
+These TLS IDs and operating windows supersede the provisional SUMO 1.18
+selection for all publication-oriented experiments.
