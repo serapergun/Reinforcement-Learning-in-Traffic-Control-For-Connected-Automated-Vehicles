@@ -1,13 +1,18 @@
 name: LuST Legacy TLS Selection
 
 on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-legacy-selection.yml'
   workflow_run:
     workflows: ["LuST Legacy SUMO 0.27 Validation"]
     types: [completed]
 
 jobs:
   select:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
     env:
       SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
