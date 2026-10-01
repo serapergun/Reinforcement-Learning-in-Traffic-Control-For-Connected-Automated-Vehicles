@@ -362,7 +362,7 @@ class MAPPO:
         torch.save({"actor":self.actor.state_dict(),"critic":self.critic.state_dict(),"meta":meta},path)
 
 def run_policy(env,agent,train=True):
-    obs=env.start(); traj=[]; prob_sum=np.zeros(3); prob_n=0; chosen=np.zeros(3,dtype=int)
+    obs=env.start(); traj=[]; prob_sum=np.zeros(3); prob_n=0; chosen=np.zeros(3,dtype=int); eligible_slots=0; total_slots=0
     try:
         while True:
             mask=env.action_mask()
