@@ -23,6 +23,10 @@ jobs:
         run: |
           git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
           cd legacy_sumo_repo/sumo
+          # Modern glibc no longer exposes the historical HUGE macro used by the
+          # bundled Euler-spiral helper. HUGE_VAL is the standard equivalent
+          # infinity sentinel and does not alter SUMO traffic-model logic.
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
           make -f Makefile.cvs
           ./configure             --with-proj-gdal=no             --with-fox-config=no             --with-gtest-config=no             --with-python=no             --with-osg=no             CXXFLAGS="-O2 -std=gnu++11"
           make -j2
@@ -93,6 +97,7 @@ jobs:
       - name: Provenance
         if: always()
         run: |
+          mkdir -p legacy_validation
           cp sumo027_version.txt legacy_validation/ 2>/dev/null || true
           echo c4bd5bd3751d426d42a9a1749c815e47ea188549 > legacy_validation/official_lust_commit.txt
           echo v0_27_0 > legacy_validation/sumo_tag.txt
