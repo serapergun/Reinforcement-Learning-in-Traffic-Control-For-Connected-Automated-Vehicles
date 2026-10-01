@@ -64,14 +64,16 @@ jobs:
           import re, pathlib, json
           t=pathlib.Path("legacy_validation/smoke.log").read_text(errors="ignore")
           m=re.search(r"Teleports:\s*(\d+)",t)
-          tele=int(m.group(1)) if m else None
+          # SUMO 0.27 omits the Teleports line when the count is zero.
+          tele=int(m.group(1)) if m else 0
           m2=re.search(r"Inserted:\s*(\d+)\s*\(Loaded:\s*(\d+)\)",t)
           inserted=int(m2.group(1)) if m2 else None
           loaded=int(m2.group(2)) if m2 else None
           out={"teleports":tele,"inserted":inserted,"loaded":loaded}
           print(out)
           pathlib.Path("legacy_validation/smoke_metrics.json").write_text(json.dumps(out,indent=2))
-          assert tele is not None and tele < 5000, f"Legacy smoke has implausible teleports: {tele}"
+          assert inserted is not None and loaded is not None
+          assert tele < 5000, f"Legacy smoke has implausible teleports: {tele}"
           PY
 
       - name: Full official due.actuated reproduction
