@@ -35,13 +35,14 @@ def is_green(state):
 
 class Env:
     def __init__(self,traci,scenario,selection,begin_s,control_s,seed,warmup_s=300,
-                 extension_s=(0.,3.,6.),cooldown_s=20.,pressure_threshold=.03):
+                 extension_s=(0.,3.,6.),cooldown_s=20.,pressure_threshold=.03,load_state=None):
         self.traci=traci;self.tc=TraCICompat(traci);self.scenario=os.path.abspath(scenario)
         self.sel=sorted(selection,key=lambda r:int(r["agent_alias"][1:]))
         self.tls=[r["tls_id"] for r in self.sel]
         self.inc=incoming_lanes(os.path.join(self.scenario,"lust.net.xml"),set(self.tls))
         self.begin=max(0,int(begin_s-warmup_s));self.control_start=int(begin_s);self.end=int(begin_s+control_s)
-        self.seed=int(seed);self.extension_s=tuple(extension_s);self.cooldown_s=float(cooldown_s)
+        self.seed=int(seed);self.load_state=os.path.abspath(load_state) if load_state else None
+        self.extension_s=tuple(extension_s);self.cooldown_s=float(cooldown_s)
         self.pressure_threshold=float(pressure_threshold);self.min_green=10.;self.decision_dt=10
         self.last_intervention=defaultdict(lambda:-1e12);self.metrics=defaultdict(float);self.steps=0
         self.interventions=0;self.eligible_slots=0;self.total_slots=0;self.action_requests=0
@@ -54,13 +55,20 @@ class Env:
     def n_actions(self):return 3
 
     def cmd(self):
-        return [self.sumo,"-c",os.path.join(self.scenario,"due.actuated.sumocfg"),
-                "--begin",str(self.begin),"--end",str(self.end),"--seed",str(self.seed),
-                "--summary-output","/dev/null","--tripinfo-output","/dev/null","--log","/dev/null"]
+        cmd=[self.sumo,"-c",os.path.join(self.scenario,"due.actuated.sumocfg"),
+             "--end",str(self.end),"--seed",str(self.seed),
+             "--summary-output","/dev/null","--tripinfo-output","/dev/null","--log","/dev/null"]
+        if self.load_state:
+            cmd += ["--load-state",self.load_state]
+        else:
+            cmd += ["--begin",str(self.begin)]
+        return cmd
 
     def start(self,sumo):
         self.sumo=os.path.abspath(sumo);self.tc.start(self.cmd())
         while self.tc.time_s()<self.control_start and self.tc.min_expected()>0:self.tc.step()
+        if abs(self.tc.time_s()-self.control_start)>2:
+            raise RuntimeError(f"Control start mismatch: got {self.tc.time_s()} expected {self.control_start}")
         return self.observe()
 
     def close(self):
@@ -254,15 +262,23 @@ def main():
     ap.add_argument("--selection",required=True);ap.add_argument("--windows",required=True);ap.add_argument("--outdir",required=True)
     ap.add_argument("--episodes",type=int,default=32);ap.add_argument("--train-s",type=int,default=900)
     ap.add_argument("--eval-s",type=int,default=1800);ap.add_argument("--eval-seeds",default="9001,9002,9003");ap.add_argument("--seed",type=int,default=42)
+    ap.add_argument("--states-dir",default=None,help="Directory containing state_<condition>.xml files generated from a full LuST run")
     args=ap.parse_args();os.makedirs(args.outdir,exist_ok=True)
     sys.path.insert(0,os.path.abspath(args.sumo_tools));import traci
     random.seed(args.seed);np.random.seed(args.seed);torch.manual_seed(args.seed)
     sel=read_csv(args.selection);wins={r["condition"]:int(float(r["selected_hour"])) for r in read_csv(args.windows)}
     conds=[c for c in ("Off-peak","AM","Lunch","PM") if c in wins]
+    def state_for(cond):
+        if not args.states_dir:return None
+        return os.path.join(os.path.abspath(args.states_dir),f"state_{cond.replace('-','_')}.xml")
+    if args.states_dir:
+        for cond in conds:
+            p=state_for(cond)
+            if not os.path.isfile(p):raise FileNotFoundError(p)
     agent=MAPPO(9,13,3,args.seed);hist=[];t0=time.time()
     for ep in range(args.episodes):
         cond=conds[ep%len(conds)];seed=1000+ep
-        env=Env(traci,args.scenario,sel,wins[cond]*3600,args.train_s,seed)
+        env=Env(traci,args.scenario,sel,wins[cond]*3600,args.train_s,seed,load_state=state_for(cond))
         traj,s=rollout(env,args.sumo,agent,True);up=agent.update(traj)
         row={"episode":ep+1,"condition":cond,"seed":seed,**s,**up};hist.append(row);print(row,flush=True)
     write_csv(os.path.join(args.outdir,"training_history.csv"),hist)
@@ -274,9 +290,25 @@ def main():
     rows=[]
     for seed in [int(x) for x in args.eval_seeds.split(",") if x]:
         for cond in conds:
-            b=native_eval(traci,args.sumo,args.scenario,sel,wins[cond]*3600,args.eval_s,seed)
+            if args.states_dir:
+                benv=Env(traci,args.scenario,sel,wins[cond]*3600,args.eval_s,seed,load_state=state_for(cond))
+                benv.start(args.sumo)
+                try:
+                    while benv.tc.time_s()<benv.end and benv.tc.min_expected()>0:
+                        arrived=0;co2=0.
+                        for _ in range(benv.decision_dt):
+                            if benv.tc.min_expected()<=0:break
+                            benv.tc.step();arrived+=benv.tc.arrived_number()
+                            for tl in benv.tls:co2+=benv.lane_stats(tl)["co2"]
+                        stats=[benv.lane_stats(t) for t in benv.tls]
+                        benv.metrics["halt"]+=sum(s["halt"] for s in stats);benv.metrics["waiting"]+=sum(s["waiting"] for s in stats)
+                        benv.metrics["arrived"]+=arrived;benv.metrics["co2_mg"]+=co2;benv.steps+=1
+                    b=benv.summary()
+                finally:benv.close()
+            else:
+                b=native_eval(traci,args.sumo,args.scenario,sel,wins[cond]*3600,args.eval_s,seed)
             rows.append({"controller":"Actuated","seed":seed,"condition":cond,**b})
-            env=Env(traci,args.scenario,sel,wins[cond]*3600,args.eval_s,seed)
+            env=Env(traci,args.scenario,sel,wins[cond]*3600,args.eval_s,seed,load_state=state_for(cond))
             _,m=rollout(env,args.sumo,agent,False);rows.append({"controller":"MAPPO-residual","seed":seed,"condition":cond,**m})
             print(rows[-2:],flush=True)
     write_csv(os.path.join(args.outdir,"evaluation_raw.csv"),rows)
