@@ -9,6 +9,8 @@ jobs:
   dataset-gru:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
+    env:
+      SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
