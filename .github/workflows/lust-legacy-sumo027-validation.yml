@@ -29,8 +29,11 @@ jobs:
           sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
           make -f Makefile.cvs
           ./configure             --with-proj-gdal=no             --with-fox-config=no             --with-gtest-config=no             --with-python=no             --with-osg=no             CXXFLAGS="-O2 -std=gnu++11"
-          make -j2
-          ./bin/sumo --version | tee ../../sumo027_version.txt
+          # Build only the microscopic SUMO executable. A full legacy build also
+          # invokes Python-2-era netimport code (typemap.iteritems), which is not
+          # required for running an already-built LuST network.
+          make -j2 sumo
+          ./src/sumo --version | tee ../../sumo027_version.txt
           grep -F "Version 0.27.0" ../../sumo027_version.txt
 
       - name: Pin official LuST v2.0
@@ -42,7 +45,7 @@ jobs:
       - name: Two-hour compatibility smoke test
         run: |
           mkdir -p legacy_validation
-          SUMO="$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo"
+          SUMO="$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/src/sumo"
           cd official_lust/scenario
           "$SUMO" -c due.actuated.sumocfg --end 7200             --log ../../legacy_validation/smoke.log             --summary-output ../../legacy_validation/smoke.summary.xml             --tripinfo-output ../../legacy_validation/smoke.tripinfo.xml
           cd ../..
