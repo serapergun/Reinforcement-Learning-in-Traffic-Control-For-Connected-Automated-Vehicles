@@ -56,12 +56,14 @@ class Env:
 
     def cmd(self):
         cmd=[self.sumo,"-c",os.path.join(self.scenario,"due.actuated.sumocfg"),
-             "--end",str(self.end),"--seed",str(self.seed),
+             "--end",str(self.end),
              "--summary-output","/dev/null","--tripinfo-output","/dev/null","--log","/dev/null"]
         if self.load_state:
+            # Saved state carries the simulator/RNG state. Do not override it with
+            # a fresh seed when branching from the same counterfactual state.
             cmd += ["--load-state",self.load_state]
         else:
-            cmd += ["--begin",str(self.begin)]
+            cmd += ["--seed",str(self.seed),"--begin",str(self.begin)]
         return cmd
 
     def start(self,sumo):
