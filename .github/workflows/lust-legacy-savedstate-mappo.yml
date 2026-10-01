@@ -1,0 +1,122 @@
+name: LuST Legacy Saved-State MAPPO
+
+on:
+  workflow_run:
+    workflows: ["LuST Legacy Publication Pipeline"]
+    types: [completed]
+
+jobs:
+  savedstate-mappo:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool pkg-config libxerces-c-dev git python3 python3-pip
+          python3 -m pip install --user numpy
+          python3 -m pip install --user torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download validated publication-pipeline artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lust-sumo027-publication-pipeline
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version | tee ../../sumo027_version.txt
+          grep -F "Version 0.27.0" ../../sumo027_version.txt
+
+      - name: Pin official LuST v2.0
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+          test "$(git -C official_lust rev-parse HEAD)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+
+      - name: Prepare full-history branch states
+        run: |
+          mkdir -p savedstate_results/states
+          python3 research/lust_dynamic_coalition/prepare_legacy_branch_states.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --windows "$GITHUB_WORKSPACE/upstream/selection/selected_operating_windows.csv" \
+            --outdir "$GITHUB_WORKSPACE/savedstate_results/states" \
+            --seeds 4101,4102,9001,9002,9003 \
+            --prehistory-s 300
+
+      - name: Train and evaluate saved-state guarded residual MAPPO
+        run: |
+          mkdir -p savedstate_results/mappo
+          python3 research/lust_dynamic_coalition/train_mappo_legacy_savedstate.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/upstream/selection/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/upstream/selection/selected_operating_windows.csv" \
+            --states "$GITHUB_WORKSPACE/savedstate_results/states" \
+            --state-manifest "$GITHUB_WORKSPACE/savedstate_results/states/state_manifest.json" \
+            --outdir "$GITHUB_WORKSPACE/savedstate_results/mappo" \
+            --episodes 32 --train-s 900 --eval-s 1800 \
+            --train-seeds 4101,4102 --eval-seeds 9001,9002,9003 --seed 42
+
+      - name: Saved-state pairing and diagnostic gate
+        run: |
+          python3 - <<'PY'
+          import csv,json,pathlib
+          rows=list(csv.DictReader(open("savedstate_results/mappo/evaluation_raw.csv")))
+          conditions=sorted({r["condition"] for r in rows})
+          seeds=sorted({int(r["seed"]) for r in rows})
+          audit={"pairs":{}}
+          for seed in seeds:
+              for cond in conditions:
+                  pair=[r for r in rows if int(r["seed"])==seed and r["condition"]==cond]
+                  assert len(pair)==2,(seed,cond,len(pair))
+                  hashes={r["state_sha256"] for r in pair}
+                  assert len(hashes)==1,(seed,cond,hashes)
+                  audit["pairs"][f"{seed}:{cond}"]=next(iter(hashes))
+          imp=list(csv.DictReader(open("savedstate_results/mappo/paired_improvements.csv")))
+          metrics=[k for k in imp[0] if k.endswith("_rel_improvement")]
+          audit["mean_relative_improvement"]={k:sum(float(r[k]) for r in imp)/len(imp) for k in metrics}
+          json.dump(audit,open("savedstate_results/mappo/savedstate_gate.json","w"),indent=2)
+          print(json.dumps(audit,indent=2))
+          PY
+
+      - name: Preserve exact provenance without bulky state files
+        if: always()
+        run: |
+          cp upstream/selection/selected_9_tls.csv savedstate_results/ 2>/dev/null || true
+          cp upstream/selection/selected_operating_windows.csv savedstate_results/ 2>/dev/null || true
+          cp upstream/gru/gru_v2_validation.json savedstate_results/ 2>/dev/null || true
+          cp savedstate_results/states/state_audit.csv savedstate_results/ 2>/dev/null || true
+          cp savedstate_results/states/state_manifest.json savedstate_results/ 2>/dev/null || true
+          cp sumo027_version.txt savedstate_results/ 2>/dev/null || true
+          echo c4bd5bd3751d426d42a9a1749c815e47ea188549 > savedstate_results/official_lust_commit.txt
+          echo 7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b > savedstate_results/sumo_tag_commit.txt
+          rm -rf savedstate_results/states
+
+      - name: Upload saved-state MAPPO artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-sumo027-savedstate-mappo
+          path: savedstate_results/
+          if-no-files-found: warn
+          retention-days: 30
