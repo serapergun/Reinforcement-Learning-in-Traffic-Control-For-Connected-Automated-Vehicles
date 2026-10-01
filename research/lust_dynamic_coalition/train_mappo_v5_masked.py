@@ -344,6 +344,10 @@ class MAPPO:
         stats={}
         for _ in range(epochs):
             logits=self.actor(O.reshape(-1,self.obs_dim)).reshape(len(O),self.n_agents,self.n_actions)
+            # The rollout policy was sampled from a masked categorical distribution.
+            # Reapply the identical action mask during PPO updates so the new-policy
+            # log-probability is defined on the same feasible action support.
+            logits=logits.masked_fill(~MASK,-1e9)
             dist=torch.distributions.Categorical(logits=logits)
             lp=dist.log_prob(A).sum(dim=1)
             ratio=torch.exp(lp-OLD)
@@ -366,6 +370,8 @@ def run_policy(env,agent,train=True):
     try:
         while True:
             mask=env.action_mask()
+            eligible_slots += int(np.sum(mask[:,1]))
+            total_slots += int(mask.shape[0])
             act,lp,val,probs=agent.act(obs,mask=mask,deterministic=not train)
             prob_sum+=probs.sum(axis=0); prob_n+=len(probs)
             for a in act: chosen[int(a)]+=1
@@ -377,6 +383,8 @@ def run_policy(env,agent,train=True):
         for a in range(3):
             summ[f"policy_prob_a{a}"]=float(prob_sum[a]/max(prob_n,1))
             summ[f"chosen_a{a}"]=int(chosen[a])
+        summ["mask_eligible_slots"]=int(eligible_slots)
+        summ["mask_eligible_rate"]=float(eligible_slots/max(total_slots,1))
     finally:
         env.close()
     return traj,summ
