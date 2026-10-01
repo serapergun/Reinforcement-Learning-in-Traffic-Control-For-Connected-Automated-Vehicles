@@ -6,6 +6,7 @@ on:
     branches: [lust-dynamic-coalition-exp-20260928]
     paths:
       - '.github/workflows/lust-legacy-sumo027-validation.yml'
+      - 'research/lust_dynamic_coalition/legacy_traci_smoke.py'
 
 jobs:
   validate:
@@ -41,6 +42,16 @@ jobs:
           git clone https://github.com/lcodeca/LuSTScenario.git official_lust
           git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
           test "$(git -C official_lust rev-parse HEAD)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+
+      - name: Legacy Python3 TraCI compatibility smoke
+        run: |
+          mkdir -p legacy_validation
+          python3 research/lust_dynamic_coalition/legacy_traci_smoke.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/src/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --out "$GITHUB_WORKSPACE/legacy_validation/traci_smoke.json" \
+            --begin 28800 --duration 120
 
       - name: Two-hour compatibility smoke test
         run: |
