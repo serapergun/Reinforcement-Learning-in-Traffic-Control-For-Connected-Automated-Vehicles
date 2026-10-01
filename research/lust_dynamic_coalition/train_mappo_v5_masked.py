@@ -409,9 +409,23 @@ def run_actuated(env):
     finally: env.close()
 
 def write_rows(path,rows):
-    if not rows:return
+    if not rows:
+        return
+    # Actuated and MAPPO rows intentionally expose different diagnostic fields.
+    # Build a stable union schema so residual-policy diagnostics do not make the
+    # mixed-controller CSV writer fail.
+    fields=[]
+    seen=set()
+    for row in rows:
+        for key in row.keys():
+            if key not in seen:
+                seen.add(key)
+                fields.append(key)
     with open(path,"w",newline="",encoding="utf-8") as f:
-        w=csv.DictWriter(f,fieldnames=list(rows[0].keys()));w.writeheader();w.writerows(rows)
+        w=csv.DictWriter(f,fieldnames=fields,extrasaction="ignore")
+        w.writeheader()
+        for row in rows:
+            w.writerow(row)
 
 def main():
     ap=argparse.ArgumentParser()
