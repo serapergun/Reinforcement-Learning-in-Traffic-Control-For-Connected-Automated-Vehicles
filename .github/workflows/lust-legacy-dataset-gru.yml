@@ -32,6 +32,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
 
+      - name: Audit selected TLS and operating windows
+        run: |
+          python3 research/lust_dynamic_coalition/audit_legacy_selection.py --dir selection
+
       - name: Build pinned SUMO 0.27.0
         run: |
           git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
