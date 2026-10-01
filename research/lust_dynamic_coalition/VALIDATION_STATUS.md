@@ -83,3 +83,40 @@ The first completed 5-seed MAPPO experiment on SUMO 1.18.0 also degraded queuein
 waiting metrics relative to native actuated control. Subsequent residual/supervisory
 MAPPO versions are therefore treated only as controller-development experiments until
 the simulator compatibility gate is passed.
+
+
+## Legacy SUMO 0.27 build and TraCI progress (2026-10-01)
+
+The official SUMO 0.27.0 source can now be compiled on the Ubuntu 22.04 GitHub
+runner with two narrowly scoped build-compatibility patches:
+
+1. the historical Euler-spiral infinity sentinel `HUGE` is replaced by the
+   standard `HUGE_VAL`;
+2. the build helper `tools/build/typemap.py` uses `dict.items()` instead of
+   the Python-2-only `dict.iteritems()`.
+
+Neither patch touches the microscopic traffic model, car-following model,
+lane-changing model, signal logic, routing behavior, or LuST input data.
+
+A Python-3 TraCI smoke test against the compiled SUMO 0.27.0 binary succeeded.
+The test observed:
+
+- 201 traffic-light controllers;
+- 24,575 lanes;
+- correct 1-s simulation stepping (10 calls advanced the clock by exactly 10 s);
+- readable traffic-light phase/state, next-switch and phase-duration values;
+- readable lane vehicle count, halting count, mean speed, occupancy, waiting
+  time and CO2;
+- readable vehicle IDs/waiting time.
+
+The first 2-hour standalone LuST smoke run also completed normally. SUMO 0.27
+reported 2,229 inserted vehicles from 2,319 loaded by the forced 7,200-s stop,
+157 vehicles still running, zero waiting vehicles, and no `Teleports:` line.
+In SUMO 0.27 the teleports summary line is omitted when the count is zero, so
+the compatibility parser has been corrected to interpret an omitted line as
+zero rather than as missing data.
+
+This early result is substantially more plausible than the SUMO 1.18 behavior,
+but publication validity remains gated on the complete official `due.actuated`
+reproduction. No legacy-derived final performance claim is made until the full
+run satisfies the predefined compatibility guards.
