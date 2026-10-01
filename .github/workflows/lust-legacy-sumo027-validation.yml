@@ -1,0 +1,108 @@
+name: LuST Legacy SUMO 0.27 Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-legacy-sumo027-validation.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install legacy build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool pkg-config             libxerces-c-dev git python3
+
+      - name: Build SUMO 0.27.0 from official tag
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          make -f Makefile.cvs
+          ./configure             --with-proj-gdal=no             --with-fox-config=no             --with-gtest-config=no             --with-python=no             --with-osg=no             CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version | tee ../../sumo027_version.txt
+          grep -F "Version 0.27.0" ../../sumo027_version.txt
+
+      - name: Pin official LuST v2.0
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+          test "$(git -C official_lust rev-parse HEAD)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+
+      - name: Two-hour compatibility smoke test
+        run: |
+          mkdir -p legacy_validation
+          SUMO="$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo"
+          cd official_lust/scenario
+          "$SUMO" -c due.actuated.sumocfg --end 7200             --log ../../legacy_validation/smoke.log             --summary-output ../../legacy_validation/smoke.summary.xml             --tripinfo-output ../../legacy_validation/smoke.tripinfo.xml
+          cd ../..
+          python3 - <<'PY'
+          import re, pathlib, json
+          t=pathlib.Path("legacy_validation/smoke.log").read_text(errors="ignore")
+          m=re.search(r"Teleports:\s*(\d+)",t)
+          tele=int(m.group(1)) if m else None
+          m2=re.search(r"Inserted:\s*(\d+)\s*\(Loaded:\s*(\d+)\)",t)
+          inserted=int(m2.group(1)) if m2 else None
+          loaded=int(m2.group(2)) if m2 else None
+          out={"teleports":tele,"inserted":inserted,"loaded":loaded}
+          print(out)
+          pathlib.Path("legacy_validation/smoke_metrics.json").write_text(json.dumps(out,indent=2))
+          assert tele is not None and tele < 5000, f"Legacy smoke has implausible teleports: {tele}"
+          PY
+
+      - name: Full official due.actuated reproduction
+        run: |
+          SUMO="$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo"
+          cd official_lust/scenario
+          "$SUMO" -c due.actuated.sumocfg             --log ../../legacy_validation/full.log             --summary-output ../../legacy_validation/full.summary.xml             --tripinfo-output ../../legacy_validation/full.tripinfo.xml
+          cd ../..
+          python3 - <<'PY'
+          import re, pathlib, json
+          t=pathlib.Path("legacy_validation/full.log").read_text(errors="ignore")
+          def one(pat,cast=int):
+              m=re.search(pat,t)
+              return cast(m.group(1)) if m else None
+          end=one(r"Simulation ended at time:\s*([0-9.]+)",float)
+          ins=one(r"Inserted:\s*(\d+)")
+          loaded=one(r"Inserted:\s*\d+\s*\(Loaded:\s*(\d+)\)")
+          tele=one(r"Teleports:\s*(\d+)")
+          running=one(r"Running:\s*(\d+)")
+          waiting=one(r"Waiting:\s*(\d+)")
+          ref={"end_time_s":88375.0,"inserted":284349,"loaded":288250,"teleports":767}
+          obs={"end_time_s":end,"inserted":ins,"loaded":loaded,"teleports":tele,"running":running,"waiting":waiting}
+          comp={
+            "observed":obs,"LuST_docs_reference":ref,
+            "inserted_rel_error": abs(ins-ref["inserted"])/ref["inserted"] if ins is not None else None,
+            "end_rel_error": abs(end-ref["end_time_s"])/ref["end_time_s"] if end is not None else None,
+          }
+          print(json.dumps(comp,indent=2))
+          pathlib.Path("legacy_validation/full_comparison.json").write_text(json.dumps(comp,indent=2))
+          assert loaded == 288250
+          assert running == 0 and waiting == 0
+          assert abs(ins-ref["inserted"])/ref["inserted"] <= 0.01
+          assert tele is not None and tele <= 5000
+          assert abs(end-ref["end_time_s"])/ref["end_time_s"] <= 0.05
+          PY
+
+      - name: Provenance
+        if: always()
+        run: |
+          cp sumo027_version.txt legacy_validation/ 2>/dev/null || true
+          echo c4bd5bd3751d426d42a9a1749c815e47ea188549 > legacy_validation/official_lust_commit.txt
+          echo v0_27_0 > legacy_validation/sumo_tag.txt
+          echo 7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b > legacy_validation/sumo_tag_commit.txt
+
+      - name: Upload legacy validation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-sumo027-compatibility-validation
+          path: legacy_validation/
+          if-no-files-found: warn
+          retention-days: 30
