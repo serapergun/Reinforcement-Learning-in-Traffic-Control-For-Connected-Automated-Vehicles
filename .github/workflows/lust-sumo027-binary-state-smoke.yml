@@ -1,0 +1,93 @@
+name: LuST SUMO027 Binary State Smoke
+
+on:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-sumo027-binary-state-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install legacy build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool pkg-config libxerces-c-dev git python3
+
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version
+
+      - name: Pin official LuST v2.0
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+
+      - name: Save binary state at 6900 s
+        run: |
+          mkdir -p binary_state_smoke
+          cd official_lust/scenario
+          "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" -c due.actuated.sumocfg             --seed 42 --end 6901             --save-state.times 6900             --save-state.files "$GITHUB_WORKSPACE/binary_state_smoke/state_6900.sbx"             --summary-output /dev/null --tripinfo-output /dev/null --log /dev/null
+          cd ../..
+          test -s binary_state_smoke/state_6900.sbx
+          ls -lh binary_state_smoke/state_6900.sbx
+
+      - name: Load binary state and continue 60 seconds
+        run: |
+          cd official_lust/scenario
+          "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" -c due.actuated.sumocfg             --load-state "$GITHUB_WORKSPACE/binary_state_smoke/state_6900.sbx"             --end 6960             --summary-output "$GITHUB_WORKSPACE/binary_state_smoke/replay.summary.xml"             --tripinfo-output "$GITHUB_WORKSPACE/binary_state_smoke/replay.tripinfo.xml"             --log "$GITHUB_WORKSPACE/binary_state_smoke/replay.log"
+          cd ../..
+          grep -F "Simulation ended at time: 6960.00" binary_state_smoke/replay.log
+          if grep -F "Unknown cfmodel param" binary_state_smoke/replay.log; then
+            echo "Binary state reload unexpectedly hit cfmodel parse error"; exit 1
+          fi
+
+      - name: TraCI binary-state load smoke
+        run: |
+          python3 - <<'PY'
+          import os,sys,json
+          sys.path.insert(0,os.path.abspath("legacy_sumo_repo/sumo/tools"))
+          import traci
+          SUMO=os.path.abspath("legacy_sumo_repo/sumo/bin/sumo")
+          cfg=os.path.abspath("official_lust/scenario/due.actuated.sumocfg")
+          state=os.path.abspath("binary_state_smoke/state_6900.sbx")
+          cmd=[SUMO,"-c",cfg,"--load-state",state,"--end","6920",
+               "--summary-output","/dev/null","--tripinfo-output","/dev/null","--log","/dev/null"]
+          traci.start(cmd)
+          try:
+              t=float(traci.simulation.getCurrentTime())/1000.0
+              assert abs(t-6900)<=1,t
+              n0=len(traci.vehicle.getIDList())
+              for _ in range(10): traci.simulationStep()
+              t1=float(traci.simulation.getCurrentTime())/1000.0
+              out={"time_start_s":t,"time_after_10_steps_s":t1,"vehicles_start":n0,
+                   "tls_count":len(traci.trafficlights.getIDList())}
+              print(json.dumps(out,indent=2))
+              assert abs(t1-t-10)<=1
+          finally:
+              traci.close()
+          open("binary_state_smoke/traci_load_ok.json","w").write(json.dumps(out,indent=2))
+          PY
+
+      - name: Upload binary-state smoke
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-sumo027-binary-state-smoke
+          path: binary_state_smoke/
+          if-no-files-found: warn
+          retention-days: 30
