@@ -58,12 +58,16 @@ class Env:
         cmd=[self.sumo,"-c",os.path.join(self.scenario,"due.actuated.sumocfg"),
              "--end",str(self.end),
              "--summary-output","/dev/null","--tripinfo-output","/dev/null","--log","/dev/null"]
-        if self.load_state:
-            # Saved state carries the simulator/RNG state. Do not override it with
-            # a fresh seed when branching from the same counterfactual state.
-            cmd += ["--load-state",self.load_state]
-        else:
-            cmd += ["--seed",str(self.seed),"--begin",str(self.begin)]
+        # SUMO 0.27 can write the LuST state files but cannot reliably reload
+        # them (legacy vType/car-following round-trip incompatibility for bus).
+        # Preserve scientific provenance by replaying the official LuST demand
+        # from t=0 with a fixed seed and warming up to the requested control
+        # window, rather than mutating the saved-state XML.
+        #
+        # A supplied load_state is therefore provenance-only on this legacy
+        # path. All Actuated/MAPPO counterfactuals start from the same exact
+        # deterministic replay.
+        cmd += ["--seed","42","--begin","0"]
         return cmd
 
     def start(self,sumo):
