@@ -1,0 +1,107 @@
+name: LuST Phase2c MAPPO Policy Validation
+
+on:
+  workflow_run:
+    workflows: ["LuST SUMO027 Binary State Smoke"]
+    types: [completed]
+
+jobs:
+  validate-policy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool pkg-config libxerces-c-dev git python3 python3-pip
+          python3 -m pip install --user numpy
+          python3 -m pip install --user torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download validated Phase2 model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lust-legacy-phase2-dataset-gru-mappo
+          path: phase2_input
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 36992730928
+
+      - name: Guard Phase2 inputs
+        run: |
+          test -s phase2_input/selected_9_tls.csv
+          test -s phase2_input/selected_operating_windows.csv
+          test -s phase2_input/mappo/legacy_mappo_residual.pt
+          test "$(cat phase2_input/official_lust_commit.txt)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+          grep -F "SUMO Version 0.27.0" phase2_input/sumo027_version.txt
+
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version | tee ../../sumo027_version.txt
+          grep -F "Version 0.27.0" ../../sumo027_version.txt
+
+      - name: Pin official LuST v2.0
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+
+      - name: Generate four binary validation states
+        run: |
+          mkdir -p phase2c/states
+          python3 research/lust_dynamic_coalition/generate_legacy_binary_states.py             --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo"             --scenario "$GITHUB_WORKSPACE/official_lust/scenario"             --windows "$GITHUB_WORKSPACE/phase2_input/selected_operating_windows.csv"             --outdir "$GITHUB_WORKSPACE/phase2c/states"             --seed 42
+          test -s phase2c/states/state_AM.sbx
+          test -s phase2c/states/state_PM.sbx
+
+      - name: Validate deployment rules on unseen traffic seed state
+        run: |
+          mkdir -p phase2c/policy_validation
+          python3 research/lust_dynamic_coalition/evaluate_mappo_policy_modes.py             --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo"             --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools"             --scenario "$GITHUB_WORKSPACE/official_lust/scenario"             --selection "$GITHUB_WORKSPACE/phase2_input/selected_9_tls.csv"             --windows "$GITHUB_WORKSPACE/phase2_input/selected_operating_windows.csv"             --states-dir "$GITHUB_WORKSPACE/phase2c/states"             --model "$GITHUB_WORKSPACE/phase2_input/mappo/legacy_mappo_residual.pt"             --outdir "$GITHUB_WORKSPACE/phase2c/policy_validation"             --horizon 1800 --traffic-seed 42             --thresholds 0.25,0.35,0.45,0.55 --policy-seed 7301
+
+      - name: Validation integrity gate
+        run: |
+          python3 - <<'PY'
+          import csv,json,math
+          rows=list(csv.DictReader(open("phase2c/policy_validation/policy_mode_validation.csv")))
+          assert len(rows)==28, len(rows)  # 7 deployment rows x 4 conditions
+          assert {r["condition"] for r in rows}=={"Off-peak","AM","Lunch","PM"}
+          agg=list(csv.DictReader(open("phase2c/policy_validation/policy_mode_aggregate.csv")))
+          assert agg
+          for r in rows:
+              for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles_global","CO2_kg_selected_approaches"):
+                  assert math.isfinite(float(r[k])), (r,k)
+          print("Top validation deployment:",agg[0])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          cp phase2_input/selected_9_tls.csv phase2c/ 2>/dev/null || true
+          cp phase2_input/selected_operating_windows.csv phase2c/ 2>/dev/null || true
+          cp phase2_input/gru/gru_v2_validation.json phase2c/ 2>/dev/null || true
+          cp sumo027_version.txt phase2c/ 2>/dev/null || true
+          echo c4bd5bd3751d426d42a9a1749c815e47ea188549 > phase2c/official_lust_commit.txt
+          echo 7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b > phase2c/sumo_tag_commit.txt
+          echo "phase2_model_run=36992730928" > phase2c/provenance.txt
+          echo "validation_traffic_state_seed=42" >> phase2c/provenance.txt
+          echo "thresholds are validation-only; must be frozen before held-out testing" >> phase2c/provenance.txt
+
+      - name: Upload Phase2c validation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-phase2c-mappo-policy-validation
+          path: phase2c/
+          if-no-files-found: warn
+          retention-days: 30
