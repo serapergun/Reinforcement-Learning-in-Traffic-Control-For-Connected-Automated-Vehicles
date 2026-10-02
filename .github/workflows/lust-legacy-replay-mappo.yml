@@ -28,7 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p phase2_input
-          gh run download 36892215405 -n phase2-real-results -D phase2_input
+          gh run download 36892215405 -n lust-legacy-phase2-dataset-gru-mappo -D phase2_input
           test -s phase2_input/selected_9_tls.csv
           test -s phase2_input/selected_operating_windows.csv
           test -s phase2_input/gru/gru_validation.json
