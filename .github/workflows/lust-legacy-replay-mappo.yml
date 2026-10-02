@@ -111,16 +111,17 @@ jobs:
             --selection "$GITHUB_WORKSPACE/phase2_input/selected_9_tls.csv" \
             --windows "$GITHUB_WORKSPACE/phase2_input/selected_operating_windows.csv" \
             --outdir "$GITHUB_WORKSPACE/phase2b/mappo" \
-            --episodes 24 --train-s 900 --eval-s 1800 --eval-seeds 9001 --seed 42
+            --episodes 24 --train-s 900 --eval-s 1800 --eval-seeds 9001,9002,9003,9004,9005 --seed 42
 
       - name: Integrity gate
         run: |
           python3 - <<'PY'
           import csv,json,math
           rows=list(csv.DictReader(open("phase2b/mappo/evaluation_raw.csv")))
-          assert len(rows)==8, len(rows)
+          assert len(rows)==40, len(rows)
           assert {r["controller"] for r in rows}=={"Actuated","MAPPO-residual"}
           assert {r["condition"] for r in rows}=={"Off-peak","AM","Lunch","PM"}
+          assert {int(r["seed"]) for r in rows}=={9001,9002,9003,9004,9005}
           for r in rows:
               for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles_global","CO2_kg_selected_approaches"):
                   assert math.isfinite(float(r[k])), (r["controller"],r["condition"],k,r[k])
