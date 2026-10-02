@@ -92,17 +92,20 @@ jobs:
             --outdir phase2/gru \
             --epochs 40 --patience 7 --seed 42
 
-      - name: Generate full-day saved states for control windows
+      - name: Smoke-test deterministic replay MAPPO path
         run: |
-          mkdir -p phase2/states
-          python3 research/lust_dynamic_coalition/generate_legacy_window_states.py \
+          mkdir -p phase2/mappo_smoke
+          python3 research/lust_dynamic_coalition/train_mappo_legacy_residual.py \
             --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
             --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/selection/selected_9_tls.csv" \
             --windows "$GITHUB_WORKSPACE/selection/selected_operating_windows.csv" \
-            --outdir "$GITHUB_WORKSPACE/phase2/states" \
-            --warmup-s 300 --seed 42
+            --outdir "$GITHUB_WORKSPACE/phase2/mappo_smoke" \
+            --episodes 1 --train-s 60 --eval-s 60 \
+            --eval-seeds 9001 --seed 42
 
-      - name: Train guarded residual MAPPO from saved states
+      - name: Train guarded residual MAPPO with deterministic replay
         run: |
           mkdir -p phase2/mappo
           python3 research/lust_dynamic_coalition/train_mappo_legacy_residual.py \
@@ -111,7 +114,6 @@ jobs:
             --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
             --selection "$GITHUB_WORKSPACE/selection/selected_9_tls.csv" \
             --windows "$GITHUB_WORKSPACE/selection/selected_operating_windows.csv" \
-            --states-dir "$GITHUB_WORKSPACE/phase2/states" \
             --outdir "$GITHUB_WORKSPACE/phase2/mappo" \
             --episodes 24 --train-s 900 --eval-s 1800 \
             --eval-seeds 9001 --seed 42
