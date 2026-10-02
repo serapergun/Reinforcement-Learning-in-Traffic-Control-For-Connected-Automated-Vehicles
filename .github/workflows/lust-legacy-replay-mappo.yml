@@ -10,7 +10,7 @@ on:
 
 jobs:
   replay-mappo:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
@@ -47,16 +47,17 @@ jobs:
 
       - name: Build pinned SUMO 0.27.0
         run: |
-          git clone https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
-          git -C legacy_sumo_repo checkout 7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b
-          test -f legacy_sumo_repo/CMakeLists.txt
-          test -d legacy_sumo_repo/tools
-          mkdir -p legacy_sumo_repo/build/cmake-build
-          cmake -S legacy_sumo_repo -B legacy_sumo_repo/build/cmake-build -DCMAKE_BUILD_TYPE=Release
-          cmake --build legacy_sumo_repo/build/cmake-build -j2
-          test -x legacy_sumo_repo/bin/sumo
-          legacy_sumo_repo/bin/sumo --version | tee sumo027_version.txt
-          grep -F 'Version 0.27.0' sumo027_version.txt
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          test -x ./bin/sumo
+          ./bin/sumo --version | tee ../../sumo027_version.txt
+          grep -F "Version 0.27.0" ../../sumo027_version.txt
 
       - name: Pin official LuST
         run: |
