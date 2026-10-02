@@ -1,0 +1,121 @@
+name: LuST Phase2b SUMO027 Replay MAPPO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-legacy-replay-mappo.yml'
+
+jobs:
+  replay-mappo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --break-system-packages numpy torch --index-url https://download.pytorch.org/whl/cpu || true
+          python3 -m pip install --break-system-packages numpy torch
+
+      - name: Download validated Phase2 artifact inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p phase2_input
+          gh run download 36892215405 -n phase2-real-results -D phase2_input
+          test -s phase2_input/selected_9_tls.csv
+          test -s phase2_input/selected_operating_windows.csv
+          test -s phase2_input/gru/gru_validation.json
+
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          git -C legacy_sumo_repo checkout 7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b
+          mkdir -p legacy_sumo_repo/sumo/build/cmake-build
+          cmake -S legacy_sumo_repo/sumo -B legacy_sumo_repo/sumo/build/cmake-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build legacy_sumo_repo/sumo/build/cmake-build -j2
+          legacy_sumo_repo/sumo/bin/sumo --version | tee sumo027_version.txt
+
+      - name: Pin official LuST
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+          test "$(git -C official_lust rev-parse HEAD)" = "c4bd5bd3751d426d42a9a1749c815e47ea188549"
+
+      - name: Compile guard
+        run: python3 -m py_compile research/lust_dynamic_coalition/train_mappo_legacy_replay.py
+
+      - name: Deterministic replay smoke test
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+        run: |
+          rm -rf replay_smoke
+          python3 research/lust_dynamic_coalition/train_mappo_legacy_replay.py \
+            --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/phase2_input/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/phase2_input/selected_operating_windows.csv" \
+            --outdir "$GITHUB_WORKSPACE/replay_smoke" \
+            --episodes 2 --train-s 120 --eval-s 120 --eval-seeds 9199 --seed 42
+          test -s replay_smoke/training_history.csv
+          test -s replay_smoke/evaluation_raw.csv
+          test -s replay_smoke/run_metadata.json
+          grep -F '"saved_state_used": false' replay_smoke/run_metadata.json
+
+      - name: Guarded residual MAPPO replay pilot
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+        run: |
+          mkdir -p phase2b/mappo
+          python3 research/lust_dynamic_coalition/train_mappo_legacy_replay.py \
+            --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/phase2_input/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/phase2_input/selected_operating_windows.csv" \
+            --outdir "$GITHUB_WORKSPACE/phase2b/mappo" \
+            --episodes 24 --train-s 900 --eval-s 1800 --eval-seeds 9001 --seed 42
+
+      - name: Integrity gate
+        run: |
+          python3 - <<'PY'
+          import csv,json,math
+          rows=list(csv.DictReader(open("phase2b/mappo/evaluation_raw.csv")))
+          assert len(rows)==8, len(rows)
+          assert {r["controller"] for r in rows}=={"Actuated","MAPPO-residual"}
+          assert {r["condition"] for r in rows}=={"Off-peak","AM","Lunch","PM"}
+          for r in rows:
+              for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles_global","CO2_kg_selected_approaches"):
+                  assert math.isfinite(float(r[k])), (r["controller"],r["condition"],k,r[k])
+          meta=json.load(open("phase2b/mappo/run_metadata.json"))
+          assert meta["saved_state_used"] is False
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          mkdir -p phase2b
+          cp phase2_input/selected_9_tls.csv phase2b/ 2>/dev/null || true
+          cp phase2_input/selected_operating_windows.csv phase2b/ 2>/dev/null || true
+          cp phase2_input/gru/gru_validation.json phase2b/ 2>/dev/null || true
+          cp sumo027_version.txt phase2b/ 2>/dev/null || true
+          echo c4bd5bd3751d426d42a9a1749c815e47ea188549 > phase2b/official_lust_commit.txt
+          echo 7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b > phase2b/sumo_tag_commit.txt
+          echo "upstream_phase2_run=36892215405" > phase2b/provenance.txt
+          echo "initialization=full-history deterministic replay from t=0; saved-state disabled" >> phase2b/provenance.txt
+
+      - name: Upload Phase2b replay results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2b-sumo027-replay-mappo-results
+          path: |
+            phase2b/
+            replay_smoke/
+          if-no-files-found: warn
+          retention-days: 30
