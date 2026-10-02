@@ -67,7 +67,7 @@ class Env:
         # A supplied load_state is therefore provenance-only on this legacy
         # path. All Actuated/MAPPO counterfactuals start from the same exact
         # deterministic replay.
-        cmd += ["--seed","42","--begin","0"]
+        cmd += ["--seed",str(self.seed),"--begin","0"]
         return cmd
 
     def start(self,sumo):
