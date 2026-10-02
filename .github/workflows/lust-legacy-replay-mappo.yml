@@ -68,9 +68,24 @@ jobs:
       - name: Compile guard
         run: python3 -m py_compile research/lust_dynamic_coalition/train_mappo_legacy_replay.py
 
+      - name: Legacy TraCI import guard
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+        run: |
+          test -d "$SUMO_HOME/tools"
+          test -d "$SUMO_HOME/tools/traci"
+          test -x "$SUMO_HOME/bin/sumo"
+          PYTHONPATH="$SUMO_HOME/tools:${PYTHONPATH:-}" python3 - <<'PY'
+          import os,sys
+          import traci
+          print("TraCI import OK:", traci.__file__)
+          print("SUMO_HOME:", os.environ["SUMO_HOME"])
+          assert os.path.abspath(traci.__file__).startswith(os.path.abspath(os.environ["SUMO_HOME"]))
+          PY
+
       - name: Deterministic replay smoke test
         env:
-          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
         run: |
           rm -rf replay_smoke
           python3 research/lust_dynamic_coalition/train_mappo_legacy_replay.py \
@@ -87,7 +102,7 @@ jobs:
 
       - name: Guarded residual MAPPO replay pilot
         env:
-          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
         run: |
           mkdir -p phase2b/mappo
           python3 research/lust_dynamic_coalition/train_mappo_legacy_replay.py \
