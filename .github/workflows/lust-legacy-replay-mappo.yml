@@ -29,9 +29,20 @@ jobs:
         run: |
           mkdir -p phase2_input
           gh run download 36892215405 -n lust-legacy-phase2-dataset-gru-mappo -D phase2_input
+          echo "Downloaded Phase2 artifact tree:"
+          find phase2_input -maxdepth 3 -type f -print | sort
           test -s phase2_input/selected_9_tls.csv
           test -s phase2_input/selected_operating_windows.csv
-          test -s phase2_input/gru/gru_validation.json
+          test -s phase2_input/gru/gru_v2_validation.json
+          python3 - <<'PY'
+          import csv,json
+          tls=list(csv.DictReader(open("phase2_input/selected_9_tls.csv")))
+          win=list(csv.DictReader(open("phase2_input/selected_operating_windows.csv")))
+          assert len(tls)==9, f"Expected 9 TLS, got {len(tls)}"
+          assert len(win)==4, f"Expected 4 operating windows, got {len(win)}"
+          json.load(open("phase2_input/gru/gru_v2_validation.json"))
+          print("Phase2 input preflight OK:", len(tls), "TLS,", len(win), "windows")
+          PY
 
       - name: Build pinned SUMO 0.27.0
         run: |
@@ -102,7 +113,7 @@ jobs:
           mkdir -p phase2b
           cp phase2_input/selected_9_tls.csv phase2b/ 2>/dev/null || true
           cp phase2_input/selected_operating_windows.csv phase2b/ 2>/dev/null || true
-          cp phase2_input/gru/gru_validation.json phase2b/ 2>/dev/null || true
+          cp phase2_input/gru/gru_v2_validation.json phase2b/ 2>/dev/null || true
           cp sumo027_version.txt phase2b/ 2>/dev/null || true
           echo c4bd5bd3751d426d42a9a1749c815e47ea188549 > phase2b/official_lust_commit.txt
           echo 7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b > phase2b/sumo_tag_commit.txt
