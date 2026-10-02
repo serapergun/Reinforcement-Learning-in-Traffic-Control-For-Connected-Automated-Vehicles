@@ -1,4 +1,5 @@
 name: LuST Phase2b SUMO027 Replay MAPPO
+# Replay trigger: paired-seed provenance fix
 
 on:
   workflow_dispatch:
