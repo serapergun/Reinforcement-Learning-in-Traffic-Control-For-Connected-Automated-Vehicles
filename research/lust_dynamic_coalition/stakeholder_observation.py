@@ -27,7 +27,7 @@ class StakeholderObservation:
         self.last_queue={}
 
     @property
-    def dim(self): return 12
+    def dim(self): return 14
 
     def _vehicles_on_lanes(self,lanes):
         tc=self.env.tc; ids=[]
@@ -68,7 +68,7 @@ class StakeholderObservation:
         elif "VI" in self.c:q_est=float(sum(x<.1 for x in vis))/P_V2X
         elif "MO" in self.c:q_est=float(sum(x<.1 for x in mos))/P_FCD
         ec=[np.clip(q_est/max(8*s["lanes"],1),0,3)] if ("EC" in self.c and q_est is not None) else [0.]
-        mask=[1. if p in self.c else 0. for p in PLAYERS[:2]]
+        mask=[1. if p in self.c else 0. for p in PLAYERS]
         x=np.asarray(ta+mo+vi+ec+mask,dtype=np.float32)
         return np.clip(x,0,5)
 
