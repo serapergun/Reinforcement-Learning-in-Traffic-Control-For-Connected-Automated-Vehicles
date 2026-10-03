@@ -6,6 +6,14 @@ sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
 from train_mappo_legacy_replay import Env,MAPPO,read_csv,write_csv
 from stakeholder_observation import StakeholderObservation,feasible_coalitions,PLAYERS
 
+class StakeholderMAPPO(MAPPO):
+    """Same PPO core, but without the legacy action-0 prior used by the Phase2b controller."""
+    def __init__(self,n,od,na,seed=42):
+        super().__init__(n,od,na,seed)
+        with torch.no_grad():
+            self.actor.head.bias.copy_(torch.tensor([0.25,0.0,-0.25]))
+        self.ent=.02
+
 def run(env,sumo,agent,coalition,train):
     raw=env.start(sumo); adapter=StakeholderObservation(env,coalition,env.seed); obs=adapter.observe(); traj=[]
     try:
@@ -28,7 +36,7 @@ def main():
     random.seed(args.seed);np.random.seed(args.seed);torch.manual_seed(args.seed)
     sel=read_csv(args.selection);wins={r["condition"]:int(float(r["selected_hour"])) for r in read_csv(args.windows)}
     conds=[c for c in ("Off-peak","AM","Lunch","PM") if c in wins]; cs=feasible_coalitions()
-    agent=MAPPO(9,12,3,args.seed);hist=[]
+    agent=StakeholderMAPPO(9,14,3,args.seed);hist=[]
     for ep in range(args.episodes):
         cond=conds[ep%len(conds)]; coalition=cs[ep%len(cs)]; seed=1100+ep
         env=Env(traci,args.scenario,sel,wins[cond]*3600,args.train_s,seed)
@@ -36,12 +44,14 @@ def main():
         row={"episode":ep+1,"condition":cond,"coalition":"+".join(coalition),"seed":seed,**s,**up};hist.append(row);print(row,flush=True)
     write_csv(os.path.join(args.outdir,"training_history.csv"),hist)
     torch.save({"actor":agent.actor.state_dict(),"critic":agent.critic.state_dict(),
-      "meta":{"obs_dim":12,"players":PLAYERS,"training":"coalition-mask randomized","feasible_coalitions":14,
+      "meta":{"obs_dim":14,"players":PLAYERS,"training":"coalition-mask randomized","feasible_coalitions":14,
       "controller":"validated guarded residual native/+3s/+6s","saved_state_used":False}},os.path.join(args.outdir,"stakeholder_mappo.pt"))
     # Short real-SUMO regression: grand coalition must execute and produce finite metrics/interventions.
     coalition=tuple(PLAYERS);env=Env(traci,args.scenario,sel,wins["AM"]*3600,args.eval_s,args.eval_seed)
     _,s=run(env,args.sumo,agent,coalition,False)
     assert all(np.isfinite(float(s[k])) for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","CO2_kg_selected_approaches"))
     assert s["decision_steps"]>0
+    assert s["mask_eligible_slots"]>0
+    assert s["interventions"]>0, "Deterministic stakeholder policy collapsed to native action despite eligible slots"
     json.dump({"condition":"AM","seed":args.eval_seed,"coalition":coalition,**s},open(os.path.join(args.outdir,"smoke.json"),"w"),indent=2)
 if __name__=="__main__":main()
