@@ -1,0 +1,35 @@
+name: LuST Stakeholder Adapter Gate
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - 'research/lust_dynamic_coalition/stakeholder_observation.py'
+      - '.github/workflows/lust-stakeholder-adapter-gate.yml'
+jobs:
+  gate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+      - name: Install numpy
+        run: python3 -m pip install --user numpy
+      - name: Compile and semantic gate
+        run: |
+          python3 -m py_compile research/lust_dynamic_coalition/stakeholder_observation.py
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0,"research/lust_dynamic_coalition")
+          from stakeholder_observation import *
+          cs=feasible_coalitions()
+          assert len(cs)==14 and len(set(cs))==14
+          assert ("EC",) not in cs
+          assert ("TA","MO","VI","EC") in cs
+          ids=["veh0","veh1","veh2","veh3"]
+          a=[stable_keep(9001,"-10160",v,"MO",P_FCD) for v in ids]
+          b=[stable_keep(9001,"-10160",v,"MO",P_FCD) for v in reversed(ids)]
+          assert a==list(reversed(b))
+          assert P_FCD==.20 and P_V2X==.75
+          print("Stakeholder adapter semantic gate OK: 14 coalitions, deterministic CRN sampling.")
+          PY
