@@ -1,0 +1,72 @@
+name: LuST Coalition SUMO027 Smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-coalition-sumo027-smoke.yml'
+jobs:
+  smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch --index-url https://download.pytorch.org/whl/cpu || true
+          python3 -m pip install --user numpy torch
+      - name: Download validated Phase2 inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p phase2_input
+          gh run download 36892215405 -n lust-legacy-phase2-dataset-gru-mappo -D phase2_input
+          test -s phase2_input/selected_9_tls.csv
+          test -s phase2_input/selected_operating_windows.csv
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version
+      - name: Pin official LuST
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Compile guard
+        run: python3 -m py_compile research/lust_dynamic_coalition/coalition_legacy_smoke.py research/lust_dynamic_coalition/train_mappo_legacy_replay.py
+      - name: Run 14-coalition smoke
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+        run: |
+          python3 research/lust_dynamic_coalition/coalition_legacy_smoke.py             --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools"             --scenario "$GITHUB_WORKSPACE/official_lust/scenario"             --selection "$GITHUB_WORKSPACE/phase2_input/selected_9_tls.csv"             --windows "$GITHUB_WORKSPACE/phase2_input/selected_operating_windows.csv"             --outdir "$GITHUB_WORKSPACE/coalition_smoke" --condition AM --control-s 60 --seed 9299
+      - name: Coalition integrity gate
+        run: |
+          python3 - <<'PY'
+          import csv,json,math
+          r=list(csv.DictReader(open("coalition_smoke/coalition_smoke.csv")))
+          assert len(r)==14
+          assert len({x["coalition"] for x in r})==14
+          assert "EC" not in {x["coalition"] for x in r}
+          assert {int(x["seed"]) for x in r}=={9299}
+          m=json.load(open("coalition_smoke/run_metadata.json"))
+          assert m["forecast"].startswith("persistence")
+          assert m["saved_state_used"] is False
+          print("Coalition smoke gate OK: 14/14")
+          PY
+      - name: Upload smoke results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-coalition-sumo027-smoke
+          path: coalition_smoke/
+          if-no-files-found: warn
