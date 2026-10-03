@@ -1,0 +1,107 @@
+name: LuST Phase3A Triple Coalition Screening
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-phase3a-triple-screening.yml'
+jobs:
+  triples:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Download validated inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p phase2_input phase2b_input
+          gh run download 36892215405 -n lust-legacy-phase2-dataset-gru-mappo -D phase2_input
+          gh run download 37066698978 -n phase2b-sumo027-replay-mappo-results -D phase2b_input
+          test -s phase2_input/selected_9_tls.csv
+          test -s phase2_input/selected_operating_windows.csv
+          test -s phase2b_input/phase2b/mappo/legacy_mappo_residual.pt
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version | tee ../../sumo027_version.txt
+          grep -F "Version 0.27.0" ../../sumo027_version.txt
+      - name: Pin official LuST
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Build triple shard
+        id: coalitions
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import itertools,os
+          triples=[",".join(f"A{i}" for i in c) for c in itertools.combinations(range(1,10),3)]
+          shards=[[] for _ in range(8)]
+          for k,c in enumerate(triples): shards[k%8].append(c)
+          s=int(os.environ["SHARD"])
+          c=["empty"]+shards[s]
+          print("spec="+";".join(c))
+          print("expected="+str(len(c)))
+          PY
+      - name: Compile and TraCI guards
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+        run: |
+          python3 -m py_compile research/lust_dynamic_coalition/evaluate_coalitions_legacy_replay.py
+          PYTHONPATH="$SUMO_HOME/tools:${PYTHONPATH:-}" python3 -c "import traci; print(traci.__file__)"
+      - name: Run AM triple coalition shard
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+          SPEC: ${{ steps.coalitions.outputs.spec }}
+        run: |
+          python3 research/lust_dynamic_coalition/evaluate_coalitions_legacy_replay.py \
+            --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/phase2_input/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/phase2_input/selected_operating_windows.csv" \
+            --checkpoint "$GITHUB_WORKSPACE/phase2b_input/phase2b/mappo/legacy_mappo_residual.pt" \
+            --outdir "$GITHUB_WORKSPACE/phase3a_triples" --condition AM --eval-s 1800 --seeds 9001 \
+            --coalitions "$SPEC"
+      - name: Triple integrity gate
+        env:
+          EXPECTED: ${{ steps.coalitions.outputs.expected }}
+        run: |
+          python3 - <<'PY'
+          import csv,math,os
+          r=list(csv.DictReader(open("phase3a_triples/coalition_values.csv")))
+          assert len(r)==int(os.environ["EXPECTED"]),(len(r),os.environ["EXPECTED"])
+          assert sum(x["coalition"]=="empty" for x in r)==1
+          assert all(x["condition"]=="AM" and int(x["seed"])==9001 for x in r)
+          triples=[x for x in r if x["coalition"]!="empty"]
+          assert all(int(x["coalition_size"])==3 for x in triples)
+          for x in r:
+              for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles_global","CO2_kg_selected_approaches","v_balanced"):
+                  assert math.isfinite(float(x[k])),(x["coalition"],k,x[k])
+          PY
+      - name: Upload triple shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3a-triples-shard-${{ matrix.shard }}
+          path: phase3a_triples/
+          retention-days: 30
