@@ -1,6 +1,10 @@
 name: LuST Phase3A Coalition Screening
 on:
   workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-phase3a-screening.yml'
 jobs:
   screen:
     strategy:
