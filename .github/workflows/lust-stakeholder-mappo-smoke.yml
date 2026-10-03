@@ -1,6 +1,12 @@
 name: LuST Stakeholder MAPPO Smoke
 on:
   workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - 'research/lust_dynamic_coalition/train_stakeholder_mappo_legacy.py'
+      - 'research/lust_dynamic_coalition/stakeholder_observation.py'
+      - '.github/workflows/lust-stakeholder-mappo-smoke.yml'
 jobs:
   train-smoke:
     runs-on: ubuntu-22.04
