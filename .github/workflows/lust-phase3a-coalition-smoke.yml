@@ -1,0 +1,95 @@
+name: LuST Phase3A Coalition Counterfactual Smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-phase3a-coalition-smoke.yml'
+jobs:
+  coalition-smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Download validated Phase2 and Phase2b artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p phase2_input phase2b_input
+          gh run download 36892215405 -n lust-legacy-phase2-dataset-gru-mappo -D phase2_input
+          gh run download 37066698978 -n phase2b-sumo027-replay-mappo-results -D phase2b_input
+          test -s phase2_input/selected_9_tls.csv
+          test -s phase2_input/selected_operating_windows.csv
+          test -s phase2b_input/phase2b/mappo/legacy_mappo_residual.pt
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version | tee ../../sumo027_version.txt
+          grep -F "Version 0.27.0" ../../sumo027_version.txt
+      - name: Pin official LuST
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Compile and TraCI guards
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+        run: |
+          python3 -m py_compile research/lust_dynamic_coalition/evaluate_coalitions_legacy_replay.py
+          PYTHONPATH="$SUMO_HOME/tools:${PYTHONPATH:-}" python3 -c "import traci; print(traci.__file__)"
+      - name: Phase3A paired coalition smoke
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+        run: |
+          python3 research/lust_dynamic_coalition/evaluate_coalitions_legacy_replay.py \
+            --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/phase2_input/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/phase2_input/selected_operating_windows.csv" \
+            --checkpoint "$GITHUB_WORKSPACE/phase2b_input/phase2b/mappo/legacy_mappo_residual.pt" \
+            --outdir "$GITHUB_WORKSPACE/phase3a" --condition Off-peak --eval-s 300 --seeds 9001 \
+            --coalitions 'empty;A1;A2;A3;A1,A2;A2,A3;A1,A3;grand'
+      - name: Coalition integrity gate
+        run: |
+          python3 - <<'PY'
+          import csv,json,math
+          r=list(csv.DictReader(open("phase3a/coalition_values.csv")))
+          assert len(r)==8, len(r)
+          assert {x["coalition"] for x in r}=={"empty","A1","A2","A3","A1+A2","A2+A3","A1+A3","grand"}
+          assert all(int(x["seed"])==9001 for x in r)
+          for x in r:
+              for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles_global","CO2_kg_selected_approaches","v_balanced"):
+                  assert math.isfinite(float(x[k])),(x["coalition"],k,x[k])
+          b=next(x for x in r if x["coalition"]=="empty")
+          assert abs(float(b["v_balanced"]))<1e-12
+          m=json.load(open("phase3a/metadata.json")); assert m["saved_state_used"] is False
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          mkdir -p phase3a
+          cp sumo027_version.txt phase3a/ 2>/dev/null || true
+          cp phase2_input/selected_9_tls.csv phase3a/ 2>/dev/null || true
+          cp phase2_input/selected_operating_windows.csv phase3a/ 2>/dev/null || true
+          printf '%s\n' 'phase2_run=36892215405' 'phase2b_run=37066698978' 'sumo_commit=7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b' 'lust_commit=c4bd5bd3751d426d42a9a1749c815e47ea188549' 'initialization=full-history deterministic replay from t=0; saved-state disabled' > phase3a/provenance.txt
+      - name: Upload Phase3A smoke artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3a-coalition-counterfactual-smoke
+          path: phase3a/
+          if-no-files-found: warn
+          retention-days: 30
