@@ -1,0 +1,54 @@
+name: LuST Stakeholder MAPPO Smoke
+on:
+  workflow_dispatch:
+jobs:
+  train-smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: lust-dynamic-coalition-exp-20260928}
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Inputs
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          mkdir phase2
+          gh run download 36892215405 -n lust-legacy-phase2-dataset-gru-mappo -D phase2
+          test -s phase2/selected_9_tls.csv && test -s phase2/selected_operating_windows.csv
+      - name: Build SUMO027 and pin LuST
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          cd "$GITHUB_WORKSPACE"
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Train and real-SUMO regression
+        env: {SUMO_HOME: "${{ github.workspace }}/legacy_sumo_repo/sumo"}
+        run: |
+          python3 -m py_compile research/lust_dynamic_coalition/train_stakeholder_mappo_legacy.py
+          python3 research/lust_dynamic_coalition/train_stakeholder_mappo_legacy.py             --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools"             --scenario "$GITHUB_WORKSPACE/official_lust/scenario"             --selection "$GITHUB_WORKSPACE/phase2/selected_9_tls.csv"             --windows "$GITHUB_WORKSPACE/phase2/selected_operating_windows.csv"             --outdir "$GITHUB_WORKSPACE/stakeholder_smoke" --episodes 14 --train-s 300 --eval-s 300
+      - name: Gate
+        run: |
+          python3 - <<'PY'
+          import json,math
+          x=json.load(open("stakeholder_smoke/smoke.json"))
+          assert x["decision_steps"]>0
+          assert all(math.isfinite(float(x[k])) for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","CO2_kg_selected_approaches"))
+          print(x)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stakeholder-mappo-smoke
+          path: stakeholder_smoke/
+          retention-days: 30
