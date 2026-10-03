@@ -69,7 +69,9 @@ jobs:
           r=list(csv.DictReader(open("phase3a/coalition_values.csv")))
           assert len(r)==8, len(r)
           assert {x["coalition"] for x in r}=={"empty","A1","A2","A3","A1+A2","A2+A3","A1+A3","grand"}
-          assert all(int(x["seed"])==9001 for x in r)\n          assert all(x["condition"]=="AM" for x in r)\n          assert int(next(x for x in r if x["coalition"]=="grand")["interventions"]) > 0, "Grand coalition produced no intervention"
+          assert all(int(x["seed"])==9001 for x in r)
+          assert all(x["condition"]=="AM" for x in r)
+          assert int(next(x for x in r if x["coalition"]=="grand")["interventions"]) > 0, "Grand coalition produced no intervention"
           for x in r:
               for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles_global","CO2_kg_selected_approaches","v_balanced"):
                   assert math.isfinite(float(x[k])),(x["coalition"],k,x[k])
