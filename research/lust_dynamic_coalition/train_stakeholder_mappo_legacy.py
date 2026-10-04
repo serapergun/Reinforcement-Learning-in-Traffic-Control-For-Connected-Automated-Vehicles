@@ -19,7 +19,14 @@ def run(env,sumo,agent,coalition,train):
     try:
         while True:
             mask=env.action_mask(); a,lp,v,_=agent.act(obs,mask,not train)
-            _,r,done=env.step(a); nxt=adapter.observe()
+            before=env.interventions
+            _,r,done=env.step(a)
+            # The inherited Phase2b reward penalizes cumulative intervention count,
+            # which is history-dependent. For stakeholder training use an explicit
+            # per-step residual-control cost so selective intervention is learnable.
+            step_interventions=env.interventions-before
+            r -= 0.03*(step_interventions/max(env.n_agents,1))
+            nxt=adapter.observe()
             if train: traj.append({"obs":obs,"act":a,"lp":lp,"v":v,"r":r,"done":done,"mask":mask})
             obs=nxt
             if done: break
