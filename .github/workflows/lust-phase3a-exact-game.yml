@@ -1,0 +1,125 @@
+name: LuST Phase3A Exact 512 Coalition Valuation
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-phase3a-exact-game.yml'
+jobs:
+  exact:
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lust-dynamic-coalition-exp-20260928
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Download validated inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p phase2_input phase2b_input
+          gh run download 36892215405 -n lust-legacy-phase2-dataset-gru-mappo -D phase2_input
+          gh run download 37066698978 -n phase2b-sumo027-replay-mappo-results -D phase2b_input
+          test -s phase2_input/selected_9_tls.csv
+          test -s phase2_input/selected_operating_windows.csv
+          test -s phase2b_input/phase2b/mappo/legacy_mappo_residual.pt
+      - name: Build pinned SUMO 0.27.0
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version | tee ../../sumo027_version.txt
+          grep -F "Version 0.27.0" ../../sumo027_version.txt
+      - name: Pin official LuST
+        run: |
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Build exact shard
+        id: coalitions
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import itertools,os
+          allc=[]
+          for r in range(10):
+              for c in itertools.combinations(range(1,10),r):
+                  allc.append("empty" if not c else ",".join(f"A{i}" for i in c))
+          assert len(allc)==512 and len(set(allc))==512
+          s=int(os.environ["SHARD"])
+          owned=[c for k,c in enumerate(allc) if k%32==s]
+          # Every shard gets its own paired empty baseline. Shard 0 already owns empty.
+          spec=owned if "empty" in owned else ["empty"]+owned
+          print("spec="+";".join(spec))
+          print("owned_expected="+str(len(owned)))
+          print("rows_expected="+str(len(spec)))
+          PY
+      - name: Compile and TraCI guards
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+        run: |
+          python3 -m py_compile research/lust_dynamic_coalition/evaluate_coalitions_legacy_replay.py
+          PYTHONPATH="$SUMO_HOME/tools:${PYTHONPATH:-}" python3 -c "import traci; print(traci.__file__)"
+      - name: Run exact AM coalition shard
+        env:
+          SUMO_HOME: ${{ github.workspace }}/legacy_sumo_repo/sumo
+          SPEC: ${{ steps.coalitions.outputs.spec }}
+        run: |
+          python3 research/lust_dynamic_coalition/evaluate_coalitions_legacy_replay.py \
+            --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/phase2_input/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/phase2_input/selected_operating_windows.csv" \
+            --checkpoint "$GITHUB_WORKSPACE/phase2b_input/phase2b/mappo/legacy_mappo_residual.pt" \
+            --outdir "$GITHUB_WORKSPACE/phase3a_exact" --condition AM --eval-s 1800 --seeds 9001 \
+            --coalitions "$SPEC"
+      - name: Exact shard integrity gate
+        env:
+          SHARD: ${{ matrix.shard }}
+          ROWS_EXPECTED: ${{ steps.coalitions.outputs.rows_expected }}
+          OWNED_EXPECTED: ${{ steps.coalitions.outputs.owned_expected }}
+        run: |
+          python3 - <<'PY'
+          import csv,itertools,math,os
+          r=list(csv.DictReader(open("phase3a_exact/coalition_values.csv")))
+          assert len(r)==int(os.environ["ROWS_EXPECTED"]),(len(r),os.environ["ROWS_EXPECTED"])
+          assert len({x["coalition"] for x in r})==len(r)
+          assert sum(x["coalition"]=="empty" for x in r)==1
+          assert all(x["condition"]=="AM" and int(x["seed"])==9001 for x in r)
+          for x in r:
+              assert 0 <= int(x["coalition_size"]) <= 9
+              for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","arrived_vehicles_global","CO2_kg_selected_approaches","v_balanced"):
+                  assert math.isfinite(float(x[k])),(x["coalition"],k,x[k])
+          allc=[]
+          for n in range(10):
+              for c in itertools.combinations(range(1,10),n):
+                  allc.append("empty" if not c else ",".join(f"A{i}" for i in c))
+          s=int(os.environ["SHARD"])
+          owned={c for k,c in enumerate(allc) if k%32==s}
+          got={x["coalition"] for x in r}
+          assert len(owned)==int(os.environ["OWNED_EXPECTED"])
+          assert owned <= got
+          assert got-owned <= {"empty"}
+          PY
+      - name: Upload exact shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3a-exact512-shard-${{ matrix.shard }}
+          path: phase3a_exact/
+          retention-days: 30
