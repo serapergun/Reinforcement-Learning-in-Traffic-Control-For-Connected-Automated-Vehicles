@@ -53,5 +53,9 @@ def main():
     assert s["decision_steps"]>0
     assert s["mask_eligible_slots"]>0
     assert s["interventions"]>0, "Deterministic stakeholder policy collapsed to native action despite eligible slots"
+    # Smoke should detect both degenerate extremes. Full training may later change this rate,
+    # but a short policy that intervenes at every eligible slot is not accepted as a balanced pilot.
+    frac=float(s["interventions"])/max(float(s["mask_eligible_slots"]),1.0)
+    assert frac < 0.95, "Deterministic stakeholder policy saturated: intervenes at nearly every eligible slot"
     json.dump({"condition":"AM","seed":args.eval_seed,"coalition":coalition,**s},open(os.path.join(args.outdir,"smoke.json"),"w"),indent=2)
 if __name__=="__main__":main()
