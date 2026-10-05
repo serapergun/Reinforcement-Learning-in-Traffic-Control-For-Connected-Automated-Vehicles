@@ -3,7 +3,7 @@
 import argparse,csv,json,os,random,sys,time
 import numpy as np, torch
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
-from train_mappo_legacy_replay import Env,MAPPO,read_csv,write_csv
+from train_mappo_legacy_replay import Env,MAPPO,read_csv,write_csv,native_eval
 from stakeholder_observation import StakeholderObservation,feasible_coalitions,PLAYERS
 
 class StakeholderMAPPO(MAPPO):
