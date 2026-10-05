@@ -14,18 +14,26 @@ class StakeholderMAPPO(MAPPO):
             self.actor.head.bias.copy_(torch.tensor([0.25,0.0,-0.25]))
         self.ent=.02
 
-def run(env,sumo,agent,coalition,train):
+def run(env,sumo,agent,coalition,train,deploy_margin=0.05):
     raw=env.start(sumo); adapter=StakeholderObservation(env,coalition,env.seed); obs=adapter.observe(); traj=[]
     eligible_actions=[0,0,0]; eligible_prob_sum=np.zeros(3,dtype=float); eligible_prob_n=0
     try:
         while True:
             mask=env.action_mask(); a,lp,v,_=agent.act(obs,mask,not train)
-            # Diagnose deterministic saturation without changing the policy.
+            # Deterministic deployment uses native actuated control as the reference:
+            # a residual extension is accepted only when its learned probability exceeds
+            # the native action by a minimum margin. Stochastic PPO training is unchanged.
             with torch.no_grad():
                 logits=agent.actor(torch.tensor(obs,dtype=torch.float32))
                 mt=torch.tensor(mask,dtype=torch.bool)
                 logits=logits.masked_fill(~mt,-1e9)
                 probs=torch.softmax(logits,dim=-1).cpu().numpy()
+            if not train:
+                for i in range(env.n_agents):
+                    if bool(mask[i,1]) or bool(mask[i,2]):
+                        best=int(np.argmax(probs[i]))
+                        if best!=0 and float(probs[i,best]-probs[i,0]) < deploy_margin:
+                            a[i]=0
             for i in range(env.n_agents):
                 if bool(mask[i,1]) or bool(mask[i,2]):
                     ai=int(a[i]); eligible_actions[ai]+=1
@@ -82,10 +90,10 @@ def main():
     write_csv(os.path.join(args.outdir,"training_history.csv"),hist)
     torch.save({"actor":agent.actor.state_dict(),"critic":agent.critic.state_dict(),
       "meta":{"obs_dim":14,"players":PLAYERS,"training":"balanced seed-reproducible coalition-condition shuffle","feasible_coalitions":14,
-      "controller":"validated guarded residual native/+3s/+6s","saved_state_used":False}},os.path.join(args.outdir,"stakeholder_mappo.pt"))
+      "controller":"validated guarded residual native/+3s/+6s","saved_state_used":False,"deterministic_deploy_margin":0.05}},os.path.join(args.outdir,"stakeholder_mappo.pt"))
     # Short real-SUMO regression: grand coalition must execute and produce finite metrics/interventions.
     coalition=tuple(PLAYERS);env=Env(traci,args.scenario,sel,wins["AM"]*3600,args.eval_s,args.eval_seed)
-    _,s=run(env,args.sumo,agent,coalition,False)
+    _,s=run(env,args.sumo,agent,coalition,False,deploy_margin=0.05)
     assert all(np.isfinite(float(s[k])) for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","CO2_kg_selected_approaches"))
     assert s["decision_steps"]>0
     assert s["mask_eligible_slots"]>0
