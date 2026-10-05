@@ -2,7 +2,7 @@
 
 ## Abstract
 
-Multi-agent reinforcement learning (MARL) enables coordinated traffic signal control, yet increasing the number of cooperating intersections does not necessarily improve network performance. This study formulates participation in a residual MARL traffic-signal controller as a cooperative game and asks which intersections should be allowed to intervene, how their contributions should be attributed, and whether full cooperation is stable. A validated residual MAPPO policy is evaluated on the Luxembourg SUMO Traffic (LuST) network while native actuated control is preserved as the default signal logic. Nine traffic signals are treated as players and all 512 coalitions are evaluated through paired deterministic full-history counterfactual replay during the AM peak. Coalition value combines normalized improvements in queue, waiting time, CO2 emissions, and completed arrivals. The highest-value coalition contains five signals and achieves v(S)=0.04551, approximately 5.99 times the grand-coalition value, while reducing mean halting vehicles and waiting time by 6.10% and 7.96%, respectively. Exact Shapley analysis reveals strongly heterogeneous marginal contributions. The core is empty, with a least-core radius of epsilon*=0.02271; the uniquely determined nucleolus reduces maximum coalition dissatisfaction by approximately 30.9% relative to the Shapley allocation. The empty-core result persists across six utility-weight scenarios. A throughput-protected three-signal coalition is further identified and, across five stochastic realizations, achieves positive utility in every seed and outperforms the grand coalition in all five paired comparisons. The results show that coalition composition is more important than coalition size in the evaluated exact game, while the tested selective coalitions retain a consistent advantage over unrestricted full participation across the five-seed robustness panel.
+Multi-agent reinforcement learning (MARL) can coordinate traffic signals, but full participation need not maximize network benefit. This study formulates post-training participation in a residual MARL traffic-signal controller as a cooperative game: which intersections should be authorized to intervene, how should their contributions be attributed, and is the grand coalition stable? A fixed residual MAPPO policy is evaluated on the Luxembourg SUMO Traffic (LuST) network while native actuated control remains the default logic. Nine signals are treated as players, and all \(2^9=512\) coalitions are evaluated by paired full-history counterfactual replay for the AM-peak seed-9001 realization. Coalition value combines normalized queue, waiting-time, CO2, and completed-arrival changes. The exact-game best coalition contains five signals and reaches \(v(S)=0.04551\), approximately 5.99 times the grand-coalition value, reducing queue and waiting time by 6.10% and 7.96%, respectively, with 26 rather than 54 residual interventions; completed arrivals decrease by 0.47%. Exact Shapley values reveal heterogeneous marginal contributions. The core is empty, and the unique least-core allocation, which coincides with the nucleolus, reduces maximum coalition excess by approximately 30.9% relative to Shapley. Core emptiness persists across six utility scalarizations. Under a strict no-throughput-loss constraint, a three-signal coalition retains substantial congestion benefit. In a five-seed critical-panel evaluation, both focal selective coalitions exceed the grand coalition in balanced utility in all paired realizations. These results show that, for the evaluated setting, selective residual authorization can provide greater and more consistent benefit than unrestricted participation.
 
 **Keywords:** multi-agent reinforcement learning; traffic signal control; cooperative game theory; Shapley value; nucleolus; residual reinforcement learning; SUMO; coalition formation
 
@@ -171,7 +171,6 @@ Relative to native actuated control, this five-player coalition reduces mean hal
 
 **Figure R1.** Balanced characteristic value versus coalition size for all 512 coalitions. The exact maximum and grand coalition are highlighted.
 
-**Figure R1 source artifact:** `Figure_R1_coalition_value_vs_size.png` in the validated Phase3A publication package. Visual audit passed: all 512 coalition values are displayed by coalition size; the exact optimum and grand coalition are separately identified.
 
 ## 5.2 Exact contribution attribution
 
@@ -199,7 +198,6 @@ The maximum coalition excess under the Shapley allocation is 0.0328689. Under th
 
 **Figure R2.** Exact Shapley and nucleolus allocations for A1-A9.
 
-**Figure R2 source artifact:** `Figure_R2_shapley_vs_nucleolus.png` in the validated Phase3A publication package. Visual audit passed: paired Shapley/nucleolus allocations and the zero reference are legible for A1-A9.
 
 ## 5.4 Utility and throughput sensitivity
 
@@ -236,7 +234,6 @@ The seed-9001 exact optimum A3+A4+A7+A8+A9 also exceeds the grand coalition in a
 
 **Figure R3.** Seed-wise balanced utility for A1+A3+A4, A3+A4+A7+A8+A9, and the grand coalition.
 
-**Figure R3 source artifact:** `Figure_R3_seedwise_utility.png` in the validated Phase3A publication package. Visual audit passed: seed-wise utilities for both focal selective coalitions and the grand coalition are shown, including the negative grand-coalition outcome for seed 9004.
 
 # 6. Discussion
 
