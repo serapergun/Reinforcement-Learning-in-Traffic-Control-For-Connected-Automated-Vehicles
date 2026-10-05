@@ -37,7 +37,7 @@ jobs:
           git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
           cd legacy_sumo_repo/sumo
           test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
-          sed -i 's/\\bHUGE\\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/HUGE/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
           sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
           make -f Makefile.cvs
           ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
