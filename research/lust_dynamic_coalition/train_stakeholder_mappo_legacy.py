@@ -15,7 +15,8 @@ class StakeholderMAPPO(MAPPO):
         self.ent=.02
 
 def run(env,sumo,agent,coalition,train):
-    raw=env.start(sumo); adapter=StakeholderObservation(env,coalition,env.seed); obs=adapter.observe(); traj=[]\n    eligible_actions=[0,0,0]; eligible_prob_sum=np.zeros(3,dtype=float); eligible_prob_n=0
+    raw=env.start(sumo); adapter=StakeholderObservation(env,coalition,env.seed); obs=adapter.observe(); traj=[]
+    eligible_actions=[0,0,0]; eligible_prob_sum=np.zeros(3,dtype=float); eligible_prob_n=0
     try:
         while True:
             mask=env.action_mask(); a,lp,v,_=agent.act(obs,mask,not train)
