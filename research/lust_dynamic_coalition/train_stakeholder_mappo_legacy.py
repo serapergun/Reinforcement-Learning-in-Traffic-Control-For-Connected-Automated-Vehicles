@@ -15,10 +15,21 @@ class StakeholderMAPPO(MAPPO):
         self.ent=.02
 
 def run(env,sumo,agent,coalition,train):
-    raw=env.start(sumo); adapter=StakeholderObservation(env,coalition,env.seed); obs=adapter.observe(); traj=[]
+    raw=env.start(sumo); adapter=StakeholderObservation(env,coalition,env.seed); obs=adapter.observe(); traj=[]\n    eligible_actions=[0,0,0]; eligible_prob_sum=np.zeros(3,dtype=float); eligible_prob_n=0
     try:
         while True:
             mask=env.action_mask(); a,lp,v,_=agent.act(obs,mask,not train)
+            # Diagnose deterministic saturation without changing the policy.
+            with torch.no_grad():
+                logits=agent.actor(torch.tensor(obs,dtype=torch.float32))
+                mt=torch.tensor(mask,dtype=torch.bool)
+                logits=logits.masked_fill(~mt,-1e9)
+                probs=torch.softmax(logits,dim=-1).cpu().numpy()
+            for i in range(env.n_agents):
+                if bool(mask[i,1]) or bool(mask[i,2]):
+                    ai=int(a[i]); eligible_actions[ai]+=1
+                    eligible_prob_sum += probs[i]
+                    eligible_prob_n += 1
             before=env.interventions
             _,r,done=env.step(a)
             # The inherited Phase2b reward penalizes cumulative intervention count,
@@ -30,7 +41,15 @@ def run(env,sumo,agent,coalition,train):
             if train: traj.append({"obs":obs,"act":a,"lp":lp,"v":v,"r":r,"done":done,"mask":mask})
             obs=nxt
             if done: break
-        return traj,env.summary()
+        summary=env.summary()
+        summary["eligible_action0"]=eligible_actions[0]
+        summary["eligible_action1"]=eligible_actions[1]
+        summary["eligible_action2"]=eligible_actions[2]
+        if eligible_prob_n:
+            summary["eligible_mean_p0"]=float(eligible_prob_sum[0]/eligible_prob_n)
+            summary["eligible_mean_p1"]=float(eligible_prob_sum[1]/eligible_prob_n)
+            summary["eligible_mean_p2"]=float(eligible_prob_sum[2]/eligible_prob_n)
+        return traj,summary
     finally: env.close()
 
 def main():
