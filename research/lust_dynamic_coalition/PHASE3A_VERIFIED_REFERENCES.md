@@ -38,13 +38,13 @@ This file contains references verified against publisher, DOI, institutional, or
 
 [15] Zhu, R., Ding, W., Wu, S., Li, L., Lv, P., Xu, M. (2023). Auto-learning communication reinforcement learning for multi-intersection traffic light control. Knowledge-Based Systems, 275, 110696. DOI: 10.1016/j.knosys.2023.110696.
 
-[16] Hierarchical graph multi-agent reinforcement learning for traffic signal control. Information Sciences, 634 (2023), 55-72. DOI: 10.1016/j.ins.2023.03.087. [Author metadata should be exported directly from the publisher/reference manager before final typesetting.]
+[16] Yang, S. (2023). Hierarchical graph multi-agent reinforcement learning for traffic signal control. Information Sciences, 634, 55-72. DOI: 10.1016/j.ins.2023.03.087.
 
-[17] Analyzing communication policies in cooperative multi-agent reinforcement learning for traffic signal control: A simulation-based study. Simulation Modelling Practice and Theory, 141 (2025), 103100. DOI: 10.1016/j.simpat.2025.103100. [Author metadata should be exported directly from the publisher/reference manager before final typesetting.]
+[17] Abidi, S., Mathieu, P., Nongaillard, A. (2025). Analyzing communication policies in cooperative multi-agent reinforcement learning for traffic signal control: A simulation-based study. Simulation Modelling Practice and Theory, 141, 103100. DOI: 10.1016/j.simpat.2025.103100.
 
 ## D. Shapley-informed and selective cooperation
 
-[18] Liu et al. (2023). Multiple intersections traffic signal control based on cooperative multi-agent reinforcement learning. Information Sciences, 647, 119484. DOI: 10.1016/j.ins.2023.119484. The paper explicitly uses a Shapley-value reward function to encourage collaboration. [Full author list should be exported from the publisher record before final typesetting.]
+[18] Liu, J., Qin, S., Su, M., Luo, Y., Wang, Y., Yang, S. (2023). Multiple intersections traffic signal control based on cooperative multi-agent reinforcement learning. Information Sciences, 647, 119484. DOI: 10.1016/j.ins.2023.119484. The paper explicitly uses a Shapley-value reward function to encourage collaboration.
 
 [19] Che, Q., Wang, Q., Wang, Y., Liu, X., Wang, W., Song, M. (2026). Shapley value-based congestion attribution: A practical multiagent reinforcement learning for traffic signal control. Journal of Nanjing University (Natural Sciences), 62(1), 59-68. DOI: 10.13232/j.cnki.jnju.2026.01.006.
 
