@@ -48,61 +48,101 @@ To our knowledge, fixed-policy coalition-constrained counterfactual replay combi
 
 ## 3.1 Coalition-constrained residual MARL
 
-Let N={A1,...,A9} denote the nine selected traffic signals. The learned controller is a residual MAPPO supervisor operating above the native actuated signal logic. At each eligible decision point, action 0 preserves native operation, action 1 requests a +3 s extension of the remaining green interval, and action 2 requests a +6 s extension. Native yellow, all-red, and subsequent-green transitions remain governed by the underlying signal program.
+Let \(N=\{A_1,\ldots,A_9\}\) denote the nine selected traffic signals, with \(n=|N|=9\). The learned controller is a residual MAPPO supervisor operating above the native actuated signal logic. At each eligible decision point, action 0 preserves native operation, action 1 requests a +3 s extension of the remaining green interval, and action 2 requests a +6 s extension. Native yellow, all-red, and subsequent-green transitions remain governed by the underlying signal program.
 
-For coalition S subseteq N, only members of S may request residual interventions. Every non-member's action mask is restricted to action 0, while coalition members retain the environment-defined feasibility mask. Thus v(S) measures network performance when exactly the members of S may apply the trained residual policy. The empty coalition is the native-actuated baseline, and the grand coalition permits residual intervention at all nine selected signals.
+For coalition \(S\subseteq N\), only members of \(S\) may request residual interventions. Every non-member's action mask is restricted to action 0, while coalition members retain the environment-defined feasibility mask. Thus, \(v(S)\) measures network performance when exactly the members of \(S\) may apply the trained residual policy. The empty coalition \(\emptyset\) is the native-actuated baseline, and the grand coalition \(N\) permits residual intervention at all nine selected signals.
 
 ## 3.2 Counterfactual replay and characteristic value
 
-Coalitions are compared using full-history replay from simulation time t=0 under the same condition and random seed. For each seed, outcomes are normalized against that seed's own empty-coalition baseline.
+Coalitions are compared using full-history replay from simulation time \(t=0\) under the same condition and random seed. For each seed, outcomes are normalized against that seed's own empty-coalition baseline.
 
-Let q_S, w_S, c_S, and a_S denote mean halting vehicles, mean lane-summed waiting time, CO2 emissions on selected approaches, and completed arrivals for coalition S. With paired baseline q_0,w_0,c_0,a_0,
+Let \(q_S\), \(w_S\), \(c_S\), and \(a_S\) denote mean halting vehicles, mean lane-summed waiting time, CO2 emissions on selected approaches, and completed arrivals for coalition \(S\), respectively. With paired native baseline \(q_0,w_0,c_0,a_0\), the normalized performance changes are
 
-d_q(S)=(q_0-q_S)/q_0,
+\[
+d_q(S)=\frac{q_0-q_S}{q_0},\qquad
+d_w(S)=\frac{w_0-w_S}{w_0},
+\tag{1}
+\]
 
-d_w(S)=(w_0-w_S)/w_0,
+\[
+d_c(S)=\frac{c_0-c_S}{c_0},\qquad
+d_a(S)=\frac{a_S-a_0}{a_0}.
+\tag{2}
+\]
 
-d_c(S)=(c_0-c_S)/c_0,
+Positive \(d_q(S)\), \(d_w(S)\), and \(d_c(S)\) indicate desirable reductions, whereas positive \(d_a(S)\) indicates increased completed throughput. The balanced characteristic value is
 
-d_a(S)=(a_S-a_0)/a_0.
+\[
+v(S)=0.35d_q(S)+0.30d_w(S)+0.20d_c(S)+0.15d_a(S).
+\tag{3}
+\]
 
-Positive d_q, d_w, and d_c indicate desirable reductions; positive d_a indicates increased throughput. The balanced characteristic value is
-
-v(S)=0.35 d_q(S)+0.30 d_w(S)+0.20 d_c(S)+0.15 d_a(S).  (1)
-
-The signed arrival component prevents an apparent congestion improvement obtained simply by suppressing completed traffic. Alternative scalarizations and explicit throughput constraints are evaluated separately.
+By construction, \(v(\emptyset)=0\). The signed arrival component penalizes apparent congestion improvements obtained by suppressing completed traffic. Alternative scalarizations and explicit throughput constraints are evaluated separately.
 
 ## 3.3 Exact Shapley value
 
-For n=9, the exact Shapley value of player i is
+For the nine-player game, the exact Shapley value of player \(i\in N\) is
 
-phi_i = sum_{S subseteq N\{i}} [ |S|!(n-|S|-1)! / n! ] [v(S union {i})-v(S)].  (2)
+\[
+\phi_i=
+\sum_{S\subseteq N\setminus\{i\}}
+\frac{|S|!\,(n-|S|-1)!}{n!}
+\left[v(S\cup\{i\})-v(S)\right].
+\tag{4}
+\]
 
-Because all 512 coalitions are evaluated, no coalition sampling is required. Efficiency is verified numerically through sum_i phi_i=v(N).
+Because the complete \(2^9=512\) coalition space is evaluated, Eq. (4) is computed exactly rather than through coalition sampling. The efficiency property is verified numerically as
+
+\[
+\sum_{i\in N}\phi_i=v(N).
+\tag{5}
+\]
 
 ## 3.4 Core, least core, and nucleolus
 
-For an efficient allocation x satisfying sum_i x_i=v(N), coalition excess is
+For an efficient allocation \(x=(x_i)_{i\in N}\) satisfying Eq. (8), the excess of coalition \(S\) is defined as
 
-e(S,x)=v(S)-sum_{i in S}x_i.  (3)
+\[
+e(S,x)=v(S)-\sum_{i\in S}x_i.
+\tag{6}
+\]
 
-The core requires e(S,x)<=0 for all coalitions. If the core is empty, the least-core problem minimizes the largest excess,
+The core is the set of efficient allocations for which
 
-minimize epsilon,  (4)
+\[
+e(S,x)\le 0,\qquad \forall S\subseteq N.
+\tag{7}
+\]
+
+When the core is empty, the least-core allocation is obtained from
+
+\[
+\min_{x,\epsilon}\;\epsilon
+\tag{8}
+\]
 
 subject to
 
-v(S)-sum_{i in S}x_i <= epsilon, for all proper non-empty S,  (5)
+\[
+v(S)-\sum_{i\in S}x_i\le\epsilon,
+\qquad \forall\,\emptyset\ne S\subsetneq N,
+\tag{9}
+\]
 
-sum_i x_i=v(N).  (6)
+and the efficiency constraint
 
-For the balanced exact game, nine coalition constraints are binding at the least-core optimum; together with efficiency, their incidence system has rank nine. The least-core solution is therefore unique and coincides with the nucleolus.
+\[
+\sum_{i\in N}x_i=v(N).
+\tag{10}
+\]
+
+The nucleolus lexicographically minimizes the ordered vector of coalition excesses. In the balanced exact game studied here, the first least-core stage already determines a unique efficient allocation: the binding coalition constraints together with Eq. (10) have allocation rank nine. Consequently, no further lexicographic LP stage can alter the allocation, and this unique least-core solution is the nucleolus. Allocations are interpreted as normalized performance-credit or participation-value allocations, not monetary transfers.
 
 ## 3.5 Sensitivity and robustness
 
-Six utility-weight scenarios are examined: balanced, queue-priority, waiting-priority, CO2-priority, throughput-priority, and equal weighting. A separate throughput-protection analysis restricts coalitions according to minimum d_a(S), including the strict condition d_a(S)>=0.
+Six utility-weight scenarios are examined: balanced, queue-priority, waiting-priority, CO2-priority, throughput-priority, and equal weighting. A separate throughput-protection analysis restricts admissible coalitions according to a minimum arrival-change threshold \(d_a(S)\ge\tau_a\), including the strict no-throughput-loss case \(\tau_a=0\).
 
-For stochastic robustness, a pre-specified critical panel is evaluated on held-out seeds 9002-9005. Five-seed summaries combine these with the exact seed-9001 realization. Paired selective-versus-grand differences are summarized by mean difference, 95% t confidence interval, Cohen's dz, paired t-test, and exact two-sided Wilcoxon signed-rank test. Given n=5, interpretation emphasizes effect size, interval estimates, and directional consistency.
+For stochastic robustness, a pre-specified critical coalition panel is evaluated on held-out seeds 9002-9005. Five-seed summaries combine these runs with the exact seed-9001 realization. For coalition \(S\), its seed-wise paired advantage over the grand coalition is \(\Delta_s(S)=v_s(S)-v_s(N)\). Paired differences are summarized by the mean \(\bar{\Delta}\), a 95% Student-\(t\) confidence interval, Cohen's \(d_z=\bar{\Delta}/s_{\Delta}\), a paired \(t\)-test, and an exact two-sided Wilcoxon signed-rank test. Given \(n=5\), interpretation emphasizes effect magnitude, interval estimates, and directional consistency rather than relying on a single significance threshold.
 
 # 4. Experimental Setup
 
