@@ -232,11 +232,11 @@ A throughput-protected three-signal coalition provides a conservative alternativ
 
 [15] R. Zhu et al., “Auto-learning communication reinforcement learning for multi-intersection traffic light control,” Knowledge-Based Systems, vol. 275, 110696, 2023. doi: 10.1016/j.knosys.2023.110696.
 
-[16] “Hierarchical graph multi-agent reinforcement learning for traffic signal control,” Information Sciences, vol. 634, pp. 55–72, 2023. doi: 10.1016/j.ins.2023.03.087.
+[16] S. Yang, “Hierarchical graph multi-agent reinforcement learning for traffic signal control,” Information Sciences, vol. 634, pp. 55–72, 2023. doi: 10.1016/j.ins.2023.03.087.
 
-[17] “Analyzing communication policies in cooperative multi-agent reinforcement learning for traffic signal control: A simulation-based study,” Simulation Modelling Practice and Theory, vol. 141, 103100, 2025. doi: 10.1016/j.simpat.2025.103100.
+[17] S. Abidi, P. Mathieu, and A. Nongaillard, “Analyzing communication policies in cooperative multi-agent reinforcement learning for traffic signal control: A simulation-based study,” Simulation Modelling Practice and Theory, vol. 141, 103100, 2025. doi: 10.1016/j.simpat.2025.103100.
 
-[18] Liu et al., “Multiple intersections traffic signal control based on cooperative multi-agent reinforcement learning,” Information Sciences, vol. 647, 119484, 2023. doi: 10.1016/j.ins.2023.119484.
+[18] J. Liu, S. Qin, M. Su, Y. Luo, Y. Wang, and S. Yang, “Multiple intersections traffic signal control based on cooperative multi-agent reinforcement learning,” Information Sciences, vol. 647, 119484, 2023. doi: 10.1016/j.ins.2023.119484.
 
 [19] Q. Che, Q. Wang, Y. Wang, X. Liu, W. Wang, and M. Song, “Shapley value-based congestion attribution: A practical multiagent reinforcement learning for traffic signal control,” Journal of Nanjing University (Natural Sciences), vol. 62, no. 1, pp. 59–68, 2026. doi: 10.13232/j.cnki.jnju.2026.01.006.
 
@@ -255,5 +255,3 @@ A throughput-protected three-signal coalition provides a conservative alternativ
 [26] N. Öner and G. Kuyzu, “Core stable coalition selection in collaborative truckload transportation procurement,” Transportation Research Part E, vol. 154, 102447, 2021. doi: 10.1016/j.tre.2021.102447.
 
 [27] Y. Du, W. Shen, C. Liu, S. Wang, J. Wang, and J. Ke, “A multi-agent deep reinforcement learning framework for coordinated urban traffic signal and parking lot exit control,” Transportation Research Part C, vol. 192, 105856, 2026. doi: 10.1016/j.trc.2026.105856.
-
-**Reference-audit note:** Entries [16]–[18] retain conservative metadata where the current verification pass did not yet establish every author field from an authoritative bibliographic record. Their DOI/title/article metadata are retained for the next author-metadata audit before journal typesetting.
