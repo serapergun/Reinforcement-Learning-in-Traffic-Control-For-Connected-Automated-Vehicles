@@ -122,11 +122,16 @@ Relative to native actuated control, this five-player coalition reduces mean hal
 
 **Table R1.** Performance of the native-actuated baseline, exact-best coalition, throughput-protected coalition, and grand coalition. Queue, waiting, and CO2 entries are reported as improvements relative to baseline; arrival change retains its natural sign.
 
-[Insert Table R1 here]
+| Case | Coalition | v(S) | Queue improvement (%) | Waiting improvement (%) | CO2 improvement (%) | Arrivals change (%) |
+|---|---|---:|---:|---:|---:|---:|
+| Native actuated baseline | empty | 0.00000 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Exact best | A3+A4+A7+A8+A9 | 0.04551 | 6.10 | 7.96 | 0.50 | -0.47 |
+| Throughput-protected | A1+A3+A4 | 0.03744 | 4.86 | 7.12 | -0.51 | +0.07 |
+| Grand coalition | A1+A2+A3+A4+A5+A6+A7+A8+A9 | 0.00760 | 1.64 | 0.62 | 0.37 | -0.51 |
 
 **Figure R1.** Balanced characteristic value versus coalition size for all 512 coalitions. The exact maximum and grand coalition are highlighted.
 
-[Insert Figure R1 here]
+*Figure file: `phase3a_publication_package/Figure_R1_coalition_value_vs_size.png`.*
 
 ## 5.2 Exact contribution attribution
 
@@ -134,7 +139,17 @@ Exact Shapley values reveal substantial heterogeneity. A1 (0.02617) and A3 (0.02
 
 **Table R2.** Singleton values, exact Shapley values, nucleolus allocations, and individual-rationality indicators for all nine players.
 
-[Insert Table R2 here]
+| Player | Singleton v | Shapley | Nucleolus | Shapley IR | Nucleolus IR |
+|---|---:|---:|---:|:---:|:---:|
+| A1 | 0.00185 | 0.02617 | 0.02451 | Yes | Yes |
+| A2 | -0.08326 | -0.03185 | -0.02951 | Yes | Yes |
+| A3 | 0.02027 | 0.02055 | 0.01701 | Yes | No |
+| A4 | 0.01327 | 0.00305 | 0.00624 | No | No |
+| A5 | 0.00545 | -0.01103 | -0.00704 | No | No |
+| A6 | -0.01598 | -0.00167 | -0.00336 | Yes | Yes |
+| A7 | -0.00506 | 0.00080 | 0.00212 | Yes | Yes |
+| A8 | -0.01325 | -0.00093 | -0.01275 | Yes | Yes |
+| A9 | -0.01163 | 0.00250 | 0.01038 | Yes | Yes |
 
 ## 5.3 Core stability and nucleolus
 
@@ -144,7 +159,7 @@ The maximum coalition excess under the Shapley allocation is 0.0328689. Under th
 
 **Figure R2.** Exact Shapley and nucleolus allocations for A1-A9.
 
-[Insert Figure R2 here]
+*Figure file: `phase3a_publication_package/Figure_R2_shapley_vs_nucleolus.png`.*
 
 ## 5.4 Utility and throughput sensitivity
 
@@ -152,7 +167,14 @@ The empty-core result persists under all six scalarizations. A1 remains the high
 
 **Table R3.** Utility-weight sensitivity of coalition selection, grand-coalition value, Shapley ranking, core feasibility, and least-core radius.
 
-[Insert Table R3 here]
+| Scenario | Best coalition | Best v | Grand v | Top Shapley | Bottom Shapley | Core feasible | Least-core epsilon |
+|---|---|---:|---:|---|---|:---:|---:|
+| Balanced | A3+A4+A7+A8+A9 | 0.04551 | 0.00760 | A1 | A2 | No | 0.02271 |
+| Queue-priority | A1+A2+A3+A4+A7 | 0.04974 | 0.01033 | A1 | A2 | No | 0.02617 |
+| Waiting-priority | A3+A4+A7+A8+A9 | 0.05624 | 0.00676 | A1 | A2 | No | 0.02727 |
+| CO2-priority | A1+A2+A3+A4+A7 | 0.03065 | 0.00586 | A1 | A2 | No | 0.01634 |
+| Throughput-priority | A3+A4+A7+A8+A9 | 0.02625 | 0.00234 | A1 | A2 | No | 0.01306 |
+| Equal | A3+A4+A7+A8+A9 | 0.03521 | 0.00531 | A1 | A2 | No | 0.01755 |
 
 Under the strict non-negative-arrival condition, only seven non-empty coalitions remain feasible. A1+A3+A4 is the best feasible coalition, with v(S)=0.037443. It reduces queue by 4.86% and waiting time by 7.12%, increases completed arrivals by approximately 0.075%, and worsens CO2 by approximately 0.51%. This explicitly exposes the throughput-emissions trade-off rather than hiding it inside the scalar utility.
 
@@ -166,11 +188,15 @@ The seed-9001 exact optimum A3+A4+A7+A8+A9 also exceeds the grand coalition in a
 
 **Table R4.** Five-seed robustness of focal selective coalitions and the grand coalition.
 
-[Insert Table R4 here]
+| Coalition | Mean v | SD | Min | Max | Positive seeds |
+|---|---:|---:|---:|---:|---:|
+| A1+A3+A4 | 0.04396 | 0.01236 | 0.02586 | 0.05527 | 5/5 |
+| A3+A4+A7+A8+A9 | 0.03851 | 0.00613 | 0.02914 | 0.04551 | 5/5 |
+| Grand coalition | 0.00906 | 0.01007 | -0.00578 | 0.02024 | 4/5 |
 
 **Figure R3.** Seed-wise balanced utility for A1+A3+A4, A3+A4+A7+A8+A9, and the grand coalition.
 
-[Insert Figure R3 here]
+*Figure file: `phase3a_publication_package/Figure_R3_seedwise_utility.png`.*
 
 # 6. Discussion
 
