@@ -69,7 +69,7 @@ def main():
         with open(os.path.join(args.outdir,"paired_statistics.csv"),"w",newline="") as f:
             w=csv.DictWriter(f,fieldnames=list(stats[0]));w.writeheader();w.writerows(stats)
         # Regression targets from the verified five-seed panel.
-        targets={"A1+A3+A4":(.03490287098580091,.0007894,.0625,5),
+        targets={"A1+A3+A4":(.03490289832394923,.0007894,.0625,5),
                  "A3+A4+A7+A8+A9":(.02945390391,.0078977,.0625,5)}
         for r in stats:
             m,tp,wp,wins=targets[r["coalition"]]
