@@ -67,14 +67,21 @@ def main():
     sel=read_csv(args.selection);wins={r["condition"]:int(float(r["selected_hour"])) for r in read_csv(args.windows)}
     conds=[c for c in ("Off-peak","AM","Lunch","PM") if c in wins]; cs=feasible_coalitions()
     agent=StakeholderMAPPO(9,14,3,args.seed);hist=[]
+    # Balanced, seed-reproducible schedule: cover coalition-condition pairs before
+    # reshuffling, avoiding the deterministic modulo coupling used by the smoke prototype.
+    schedule=[(cond,coalition) for coalition in cs for cond in conds]
+    rng=random.Random(args.seed); rng.shuffle(schedule)
+    while len(schedule)<args.episodes:
+        block=[(cond,coalition) for coalition in cs for cond in conds]
+        rng.shuffle(block); schedule.extend(block)
     for ep in range(args.episodes):
-        cond=conds[ep%len(conds)]; coalition=cs[ep%len(cs)]; seed=1100+ep
+        cond,coalition=schedule[ep]; seed=1100+ep
         env=Env(traci,args.scenario,sel,wins[cond]*3600,args.train_s,seed)
         traj,s=run(env,args.sumo,agent,coalition,True); up=agent.update(traj)
         row={"episode":ep+1,"condition":cond,"coalition":"+".join(coalition),"seed":seed,**s,**up};hist.append(row);print(row,flush=True)
     write_csv(os.path.join(args.outdir,"training_history.csv"),hist)
     torch.save({"actor":agent.actor.state_dict(),"critic":agent.critic.state_dict(),
-      "meta":{"obs_dim":14,"players":PLAYERS,"training":"coalition-mask randomized","feasible_coalitions":14,
+      "meta":{"obs_dim":14,"players":PLAYERS,"training":"balanced seed-reproducible coalition-condition shuffle","feasible_coalitions":14,
       "controller":"validated guarded residual native/+3s/+6s","saved_state_used":False}},os.path.join(args.outdir,"stakeholder_mappo.pt"))
     # Short real-SUMO regression: grand coalition must execute and produce finite metrics/interventions.
     coalition=tuple(PLAYERS);env=Env(traci,args.scenario,sel,wins["AM"]*3600,args.eval_s,args.eval_seed)
