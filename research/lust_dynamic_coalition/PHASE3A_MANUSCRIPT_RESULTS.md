@@ -47,3 +47,28 @@ Figure R1: coalition value versus coalition size for all 512 coalitions, highlig
 Figure R2: Shapley versus nucleolus allocation by traffic signal.
 
 Figure R3: seed-wise balanced utility for A1+A3+A4, A3+A4+A7+A8+A9, and the grand coalition.
+
+
+## Final table and figure captions
+
+**Table R1. Performance of the native-actuated baseline, the highest-value coalition in the complete seed-9001 game, the throughput-protected selective coalition, and the grand coalition during the AM-peak evaluation.** Queue, waiting-time, and CO2 entries are reported as percentage improvements relative to the native-actuated baseline; positive values therefore denote reductions. Arrival change is reported in its natural direction, with positive values denoting increased completed arrivals. The exact-best coalition is identified from all 512 coalitions, whereas the throughput-protected solution is the highest-value coalition satisfying non-negative arrival gain.
+
+**Table R2. Exact cooperative-game allocations for the nine traffic-signal agents in the seed-9001 512-coalition game.** Singleton characteristic values are shown together with exact Shapley values and nucleolus allocations. Individual-rationality indicators identify whether each allocation is at least as large as the corresponding singleton value. Shapley efficiency holds to numerical precision, and the nucleolus is uniquely determined by the rank-nine least-core binding system.
+
+**Table R3. Sensitivity of coalition selection and cooperative-game stability to alternative utility scalarizations.** The table reports the highest-value coalition, its characteristic value, the grand-coalition value, the highest and lowest Shapley-ranked agents, core feasibility, and least-core radius for six weighting scenarios. The persistence of an empty core and the A1/A2 Shapley ranking across all scenarios indicates that the main stability findings are not specific to the balanced weighting.
+
+**Table R4. Five-seed robustness of the focal selective coalitions and the grand coalition.** Seed 9001 is obtained from the complete exact game, while seeds 9002-9005 are independent held-out evaluations of the pre-specified critical coalition panel. Results are summarized as mean and standard deviation across seeds. Held-out panel rankings must not be interpreted as global-optimum rankings because complete 512-coalition enumeration was not repeated for seeds 9002-9005.
+
+**Figure R1. Distribution of balanced characteristic value as a function of coalition size for the complete 512-coalition seed-9001 game.** Each point represents one coalition. The highlighted maximum corresponds to A3+A4+A7+A8+A9, while the grand coalition is shown separately. The broad within-size dispersion and negative mean values for coalition sizes one through eight demonstrate that coalition composition, rather than coalition size alone, determines performance.
+
+**Figure R2. Comparison of exact Shapley and nucleolus allocations for the nine traffic-signal agents.** Shapley values quantify average marginal contribution over all coalition orders, whereas the nucleolus lexicographically minimizes coalition dissatisfaction. The nucleolus reduces the maximum excess by approximately 30.9% relative to the Shapley allocation, although the positive least-core radius confirms that the core remains empty.
+
+**Figure R3. Seed-wise balanced utility of the throughput-protected coalition A1+A3+A4, the seed-9001 exact optimum candidate A3+A4+A7+A8+A9, and the grand coalition.** Both selective coalitions outperform the grand coalition in all five evaluated seeds. A1+A3+A4 provides the highest mean utility among these focal alternatives and combines strong queue/waiting reductions with favorable mean throughput behavior.
+
+## Recommended Results-section placement
+
+Place Table R1 immediately after the first paragraph of **Exact coalition-game results**, followed by Figure R1. This establishes the central selective-versus-grand-coalition result before introducing allocation theory. Place Table R2 and Figure R2 after the Shapley paragraph and the core/nucleolus analysis. Table R3 should follow the utility-sensitivity paragraph. Table R4 and Figure R3 should appear together in **Multi-seed robustness**, so the aggregate statistics and seed-level variation can be interpreted jointly.
+
+### Reporting convention
+
+For Tables R1 and R4, use the term **improvement** when queue, waiting time, or CO2 is transformed as (baseline - controlled)/baseline; positive percentages then indicate desirable reductions. For arrivals, use **change** computed as (controlled - baseline)/baseline, so a positive percentage indicates higher throughput. This convention should be stated in the first applicable table note and used consistently throughout the manuscript.
