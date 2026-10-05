@@ -24,3 +24,8 @@ Selective cooperation is robustly preferable to unrestricted full participation 
 
 ## Reporting guardrails
 Do not claim that MAPPO is uniformly superior. Do not call A1+A3+A4 the global optimum across seeds. Exact Shapley, core, least-core and nucleolus results refer to the complete seed-9001 512-coalition game. The 9002-9005 runs are a targeted robustness panel and cannot produce exact cooperative-game allocations for those seeds.
+
+## Exact-game allocation validation
+For the complete seed-9001 512-coalition game, v(N)=0.007595492418404752 and the exact Shapley values sum to the grand-coalition value within approximately 3.3e-17. The core is infeasible. The least-core radius is epsilon*=0.022705376418353573. At this optimum, nine coalition constraints are binding; together with the efficiency equation their incidence system has rank 9 for the nine-player game. Hence the first least-core stage uniquely determines the allocation, so the reported least-core vector is also the nucleolus for this game.
+
+The nucleolus reduces maximum coalition dissatisfaction from 0.0328688503 under the Shapley allocation to 0.0227053764, a reduction of about 30.9%. This does not make the grand coalition stable in the core sense: epsilon*>0 remains direct evidence of an empty core under the balanced scalar utility.
