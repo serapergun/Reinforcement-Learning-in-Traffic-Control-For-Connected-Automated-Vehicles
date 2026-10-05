@@ -8,6 +8,9 @@ import argparse, csv, itertools, math, os
 from collections import defaultdict
 import numpy as np
 
+# Verified seed-9001 regression targets for the published balanced exact game.
+REGRESSION={"grand_v":0.007595492418404752,"best_v":0.0455069834356523,"epsilon":0.022705376418353573}
+
 PLAYERS=tuple(f"A{i}" for i in range(1,10))
 N=len(PLAYERS)
 
@@ -79,6 +82,7 @@ def main():
     ap.add_argument("coalition_values")
     ap.add_argument("--outdir",default="phase3a_analysis")
     ap.add_argument("--value-col",default="v_balanced")
+    ap.add_argument("--regression-check",action="store_true",help="assert verified seed-9001 balanced-game targets")
     args=ap.parse_args(); os.makedirs(args.outdir,exist_ok=True)
     game,raw=read_game(args.coalition_values,args.value_col)
     phi=shapley(game)
@@ -113,6 +117,32 @@ def main():
               "shapley_max_excess":shap_max,"nucleolus_max_excess":nuc_max,
               "max_excess_reduction_pct":100*(shap_max-nuc_max)/shap_max}]
     write_csv(os.path.join(args.outdir,"game_summary.csv"),summary)
+    # Publication Figure R1: all exact coalition values by coalition size.
+    try:
+        import matplotlib.pyplot as plt
+        xs=[]; ys=[]
+        for S,v in sorted(game.items(),key=lambda kv:(len(kv[0]),kv[1])):
+            xs.append(len(S)); ys.append(v)
+        plt.figure(figsize=(7.2,4.6)); plt.scatter(xs,ys,s=14,alpha=.55)
+        plt.scatter([len(best)],[game[best]],s=70,marker="*",label="Exact best")
+        plt.scatter([N],[game[grand]],s=50,marker="s",label="Grand coalition")
+        plt.axhline(0,linewidth=.8); plt.xlabel("Coalition size"); plt.ylabel("Balanced coalition value v(S)")
+        plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(args.outdir,"Figure_R1_coalition_value_vs_size.png"),dpi=300); plt.close()
+        # Publication Figure R2: exact allocation comparison.
+        xx=np.arange(N); w=.38
+        plt.figure(figsize=(7.2,4.6)); plt.bar(xx-w/2,[phi[p] for p in PLAYERS],w,label="Shapley")
+        plt.bar(xx+w/2,[x[p] for p in PLAYERS],w,label="Nucleolus")
+        plt.axhline(0,linewidth=.8); plt.xticks(xx,PLAYERS); plt.ylabel("Normalized performance-credit allocation")
+        plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(args.outdir,"Figure_R2_shapley_vs_nucleolus.png"),dpi=300); plt.close()
+    except ImportError:
+        print("WARNING: matplotlib unavailable; CSV outputs created but figures skipped")
+    if args.regression_check:
+        tests=[("grand_v",game[grand],REGRESSION["grand_v"]),("best_v",game[best],REGRESSION["best_v"]),("epsilon",eps,REGRESSION["epsilon"])]
+        for name,got,want in tests:
+            if not math.isclose(got,want,rel_tol=0,abs_tol=1e-10):
+                raise RuntimeError(f"Regression check failed for {name}: got {got}, expected {want}")
+        if rank!=9: raise RuntimeError(f"Regression check failed: binding+efficiency rank={rank}, expected 9")
+        print("Regression check: PASS")
     print(summary[0])
     for r in alloc: print(r)
 
