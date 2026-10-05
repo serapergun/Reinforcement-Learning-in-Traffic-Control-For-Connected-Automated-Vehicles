@@ -9,7 +9,17 @@ FOCAL=("A1+A3+A4","A3+A4+A7+A8+A9","grand")
 
 def norm(s):
     s=s.strip()
-    return "grand" if s=="grand" else "+".join(sorted(s.replace(",","+").split("+"),key=lambda z:int(z[1:])))
+    if s=="grand":
+        return "grand"
+    parts=[x for x in s.replace(",","+").split("+") if x]
+    parts=sorted(parts,key=lambda z:int(z[1:]))
+    return "grand" if parts==[f"A{i}" for i in range(1,10)] else "+".join(parts)
+
+def value_from_row(r):
+    for col in ("v_balanced","utility","v"):
+        if col in r and str(r[col]).strip()!="":
+            return float(r[col])
+    raise ValueError("Expected one of utility columns: v_balanced, utility, or v")
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("seedwise_csv"); ap.add_argument("--outdir",default="phase3a_analysis")
@@ -17,7 +27,7 @@ def main():
     rows=list(csv.DictReader(open(args.seedwise_csv,newline="")))
     d=defaultdict(list); byseed=defaultdict(dict)
     for r in rows:
-        k=norm(r["coalition"]); v=float(r["v_balanced"] if "v_balanced" in r else r["utility"])
+        k=norm(r["coalition"]); v=value_from_row(r)
         seed=int(r["seed"]); d[k].append(v); byseed[seed][k]=v
     missing=[k for k in FOCAL if k not in d]
     if missing: raise ValueError(f"Missing focal coalitions: {missing}")
