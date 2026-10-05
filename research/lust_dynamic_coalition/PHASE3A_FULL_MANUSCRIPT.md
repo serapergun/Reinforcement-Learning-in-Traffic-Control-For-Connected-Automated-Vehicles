@@ -102,7 +102,7 @@ Because the complete \(2^9=512\) coalition space is evaluated, Eq. (4) is comput
 
 ## 3.4 Core, least core, and nucleolus
 
-For an efficient allocation \(x=(x_i)_{i\in N}\) satisfying Eq. (8), the excess of coalition \(S\) is defined as
+For an efficient allocation \(x=(x_i)_{i\in N}\) satisfying Eq. (10), the excess of coalition \(S\) is defined as
 
 \[
 e(S,x)=v(S)-\sum_{i\in S}x_i.
@@ -212,7 +212,7 @@ Exact Shapley values reveal substantial heterogeneity. A1 (0.02617) and A3 (0.02
 
 ## 5.3 Core stability and nucleolus
 
-The exact balanced game has an empty core. The least-core radius is epsilon*=0.0227054, so no efficient allocation can eliminate all coalition incentives to deviate. The rank-nine binding system uniquely determines the nucleolus.
+The exact balanced game has an empty core. The least-core radius is \(\epsilon^*=0.0227054\), so no efficient allocation can eliminate all coalition incentives to deviate. The rank-nine binding system uniquely determines the nucleolus.
 
 The maximum coalition excess under the Shapley allocation is 0.0328689. Under the nucleolus it falls to 0.0227054, a reduction of approximately 30.9%. The nucleolus therefore reduces worst-case dissatisfaction but does not make the game core-stable.
 
