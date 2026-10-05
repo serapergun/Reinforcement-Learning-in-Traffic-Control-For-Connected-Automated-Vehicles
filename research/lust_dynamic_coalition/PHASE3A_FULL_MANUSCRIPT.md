@@ -131,7 +131,7 @@ Relative to native actuated control, this five-player coalition reduces mean hal
 
 **Figure R1.** Balanced characteristic value versus coalition size for all 512 coalitions. The exact maximum and grand coalition are highlighted.
 
-*Figure file: `phase3a_publication_package/Figure_R1_coalition_value_vs_size.png`.*
+**Figure R1 source artifact:** `Figure_R1_coalition_value_vs_size.png` in the validated Phase3A publication package. Visual audit passed: all 512 coalition values are displayed by coalition size; the exact optimum and grand coalition are separately identified.
 
 ## 5.2 Exact contribution attribution
 
@@ -159,7 +159,7 @@ The maximum coalition excess under the Shapley allocation is 0.0328689. Under th
 
 **Figure R2.** Exact Shapley and nucleolus allocations for A1-A9.
 
-*Figure file: `phase3a_publication_package/Figure_R2_shapley_vs_nucleolus.png`.*
+**Figure R2 source artifact:** `Figure_R2_shapley_vs_nucleolus.png` in the validated Phase3A publication package. Visual audit passed: paired Shapley/nucleolus allocations and the zero reference are legible for A1-A9.
 
 ## 5.4 Utility and throughput sensitivity
 
@@ -196,7 +196,7 @@ The seed-9001 exact optimum A3+A4+A7+A8+A9 also exceeds the grand coalition in a
 
 **Figure R3.** Seed-wise balanced utility for A1+A3+A4, A3+A4+A7+A8+A9, and the grand coalition.
 
-*Figure file: `phase3a_publication_package/Figure_R3_seedwise_utility.png`.*
+**Figure R3 source artifact:** `Figure_R3_seedwise_utility.png` in the validated Phase3A publication package. Visual audit passed: seed-wise utilities for both focal selective coalitions and the grand coalition are shown, including the negative grand-coalition outcome for seed 9004.
 
 # 6. Discussion
 
