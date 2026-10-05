@@ -37,7 +37,10 @@ def run(env,sumo,agent,coalition,train):
             # which is history-dependent. For stakeholder training use an explicit
             # per-step residual-control cost so selective intervention is learnable.
             step_interventions=env.interventions-before
-            r -= 0.03*(step_interventions/max(env.n_agents,1))
+            # Penalize extension magnitude, not merely intervention count: +6 s must
+            # justify twice the residual-control exposure of +3 s.
+            extension_cost=sum((0 if int(x)==0 else (3 if int(x)==1 else 6)) for x in a)
+            r -= 0.005*(extension_cost/max(env.n_agents,1))
             nxt=adapter.observe()
             if train: traj.append({"obs":obs,"act":a,"lp":lp,"v":v,"r":r,"done":done,"mask":mask})
             obs=nxt
