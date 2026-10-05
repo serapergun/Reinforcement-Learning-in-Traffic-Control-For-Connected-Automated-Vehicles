@@ -148,11 +148,29 @@ For stochastic robustness, a pre-specified critical coalition panel is evaluated
 
 # 4. Experimental Setup
 
-The experiments use the Luxembourg SUMO Traffic (LuST) scenario [1,2] with the legacy SUMO 0.27 execution stack retained by the present validated pipeline; SUMO provides the microscopic simulation environment [3]. The public LuST release was originally generated and validated with SUMO 0.26. Accordingly, use of SUMO 0.27 here is reported as a pinned compatibility choice of this experimental pipeline, not as the original LuST validation version. Scenario and simulator revisions are pinned for reproducibility. Nine selected signalized intersections form the player set, while background demand, routing, and native transition sequences remain unchanged.
+## 4.1 Scenario and software stack
 
-The exact game uses the AM-peak condition, a 1800 s evaluation horizon, and seed 9001. AM peak was selected because preliminary screening showed meaningful residual intervention activity; Off-peak screening produced no informative interventions. All 512 coalitions are replayed from t=0. Saved-state initialization is not used because the legacy scenario exposed an incompatible bus car-following-model reload path.
+The experiments use the Luxembourg SUMO Traffic (LuST) scenario [1,2], with SUMO providing the microscopic simulation environment [3]. The public LuST scenario was originally generated and validated with SUMO 0.26; the present experiments use the legacy-compatible SUMO 0.27.0 stack retained by the validated pipeline. This distinction is important: SUMO 0.27.0 is a pinned compatibility choice for the present study, not the simulator version of the original LuST validation. For reproducibility, the evaluated pipeline pins LuST revision `c4bd5bd3751d426d42a9a1749c815e47ea188549` and SUMO revision `7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b`.
 
-The validated Phase2b residual MAPPO checkpoint is used without retraining. The automated evaluation retrieves validated upstream artifacts, verifies evaluator compilation and TraCI compatibility, checks coalition integrity, and stores raw and normalized coalition results. Four held-out seeds (9002-9005) use the same AM-peak horizon and controller checkpoint but evaluate only a critical coalition panel rather than all 512 coalitions.
+Nine signalized intersections form the cooperative-game player set. The fixed mapping between manuscript labels and SUMO traffic-light identifiers is: A1=`-17662`, A2=`-13722`, A3=`-26466`, A4=`-28210`, A5=`-16312`, A6=`-17612`, A7=`-18372`, A8=`-1458`, and A9=`-14740`. Background demand, routes, and native signal-transition logic are not changed by coalition membership.
+
+## 4.2 Controller and intervention semantics
+
+The validated Phase2b residual MAPPO checkpoint is held fixed throughout Phase3A; no coalition-specific retraining or fine-tuning is performed. At an eligible residual decision, action 0 leaves the native actuated controller unchanged, action 1 requests a +3 s extension of the remaining green, and action 2 requests +6 s. Residual requests do not bypass the native phase-transition sequence: green-to-yellow, yellow-to-all-red, and all-red-to-next-green transitions remain controlled by the underlying signal program. For a coalition \(S\), non-members are masked to action 0, whereas members retain the validated feasibility mask. Consequently, differences among coalition replays arise from authorization of the same trained supervisor rather than from different trained policies.
+
+## 4.3 Exact-game protocol
+
+The complete characteristic function is constructed for the AM-peak condition using a 1800 s evaluation horizon and traffic seed 9001. AM peak was selected after preliminary condition screening because it produced meaningful residual intervention activity; the Off-peak screening run produced no informative interventions. Every one of the \(2^9=512\) coalitions is simulated independently by deterministic full-history replay from \(t=0\) under the same seed and condition. The empty coalition provides the paired native-actuated baseline.
+
+Saved-state initialization is deliberately disabled. In the legacy stack, reloading the scenario state exposed an incompatible bus car-following-model parameter path (`Unknown cfmodel param when parsing vtype 'bus'`). Full-history replay avoids that reload failure and ensures that each coalition follows the same initialization procedure.
+
+The exact-game pipeline verifies the presence of all 512 unique coalitions, consistency of the paired baseline, \(v(\emptyset)=0\), and Shapley efficiency. Raw network metrics, normalized gains, intervention counts, and coalition values are retained before game-theoretic post-processing.
+
+## 4.4 Held-out robustness protocol
+
+Stochastic robustness is assessed with four additional traffic seeds, 9002-9005, using the same AM-peak horizon and the same fixed controller checkpoint. These runs evaluate a pre-specified critical coalition panel rather than the complete 512-coalition space. Together with seed 9001, they form the five-realization robustness summary. Therefore, exact Shapley, core, nucleolus, and global coalition-optimum statements refer only to the complete seed-9001 game; held-out-seed statements refer to comparisons within the tested critical panel.
+
+The analysis pipeline preserves seed-wise raw metrics and computes paired coalition-versus-grand differences before aggregation. Reproducibility checks regenerate the exact-game allocations, coalition-size summaries, focal robustness table, publication figures, and paired statistical tests from retained CSV outputs without rerunning the simulator.
 
 # 5. Results
 
