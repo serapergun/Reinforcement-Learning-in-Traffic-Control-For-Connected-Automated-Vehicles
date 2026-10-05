@@ -166,7 +166,7 @@ Relative to native actuated control, this five-player coalition reduces mean hal
 |---|---|---:|---:|---:|---:|---:|
 | Native actuated baseline | empty | 0.00000 | 0.00 | 0.00 | 0.00 | 0.00 |
 | Seed-9001 exact-game best | A3+A4+A7+A8+A9 | 0.04551 | 6.10 | 7.96 | 0.50 | -0.47 |
-| Throughput-protected | A1+A3+A4 | 0.03744 | 4.86 | 7.12 | -0.51 | +0.07 |
+| Throughput-protected | A1+A3+A4 | 0.03744 | 4.86 | 7.12 | -0.51 | +0.075 |
 | Grand coalition | A1+A2+A3+A4+A5+A6+A7+A8+A9 | 0.00760 | 1.64 | 0.62 | 0.37 | -0.51 |
 
 **Figure R1.** Balanced characteristic value versus coalition size for all 512 coalitions. The exact maximum and grand coalition are highlighted.
