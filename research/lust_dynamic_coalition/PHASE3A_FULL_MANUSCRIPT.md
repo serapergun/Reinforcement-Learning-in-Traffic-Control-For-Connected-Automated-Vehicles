@@ -24,23 +24,23 @@ The contributions are fivefold. First, we introduce a coalition-constrained resi
 
 ## 2.1 Cooperative MARL for traffic signal control
 
-MARL addresses scalability limitations of monolithic network-wide controllers by associating agents with individual intersections or local regions. Recent work has emphasized communication and information sharing to mitigate partial observability, as well as graph-based and heterogeneous-intersection representations. These studies show that coordination quality depends on spatial and temporal structure rather than merely on the number of participating agents.
+MARL addresses scalability limitations of monolithic network-wide controllers by associating agents with individual intersections or local regions. Recent work has emphasized communication and information sharing to mitigate partial observability, as well as graph-based and heterogeneous-intersection representations [6-8,12,14,15]. These studies show that coordination quality depends on spatial and temporal structure rather than merely on the number of participating agents.
 
-Recent research has also challenged the assumption that universal cooperation must dominate independent control. This motivates separating the question of how cooperation is learned from the question of where learned cooperation should be enabled. The present study focuses on the latter: the policy is fixed and participation is varied counterfactually.
+Recent research has also challenged the assumption that universal cooperation must dominate independent control [13]. A 2026 mixed-motive traffic-control study further uses selective cooperation and role-dependent information sharing for joint parking-exit and signal control [27]. These developments motivate separating how cooperation is learned from the post-training question of which signal controllers should be authorized to intervene. The present study focuses on the latter: the policy is fixed and participation is varied counterfactually.
 
 ## 2.2 Credit assignment and Shapley-based cooperation
 
-Credit assignment is difficult in cooperative MARL because network-level performance emerges from interacting local decisions. Counterfactual methods estimate the contribution of an agent relative to alternative actions, while Shapley-informed methods provide contribution-aware rewards or congestion attribution. In multi-intersection traffic control, Shapley rewards have been used during training to encourage collaboration, and recent congestion-attribution work uses Shapley analysis to identify high-contribution intersections for selective joint training.
+Credit assignment is difficult in cooperative MARL because network-level performance emerges from interacting local decisions. Counterfactual methods estimate the contribution of an agent relative to alternative actions [4], while traffic-specific counterfactual actor-critic methods use this principle to improve multi-intersection collaboration [11]. Shapley-informed methods provide contribution-aware rewards or congestion attribution: Shapley rewards have been used during cooperative traffic-signal learning [18], and recent congestion-attribution work uses Shapley analysis to identify high-contribution intersections for Top-k joint training and decision ordering [19].
 
 Our use differs in timing and purpose. Shapley values are computed after training from a complete operational characteristic function produced by coalition-constrained replay. They measure the marginal value of permitting an intersection to participate in residual control across all coalition contexts. Shapley attribution is then explicitly separated from coalition stability through core and nucleolus analysis.
 
 ## 2.3 Residual control and deployment constraints
 
-Traffic signal control is operations-critical, making unconstrained replacement of established signal logic difficult to justify. Residual RL provides an intermediate architecture in which a learned component modifies a baseline controller rather than replacing it. The present framework adopts this deployment principle: native actuated control remains the default, and coalition membership determines whether the learned supervisor may request a limited green extension. Coalition value therefore measures incremental benefit over an operational baseline.
+Traffic signal control is operations-critical, making unconstrained replacement of established signal logic difficult to justify. Safety-enhanced residual formulations such as SafeLight illustrate the broader principle of combining learned signal control with explicit operational constraints [20]. Residual RL provides an intermediate architecture in which a learned component modifies a baseline controller rather than replacing it. The present framework adopts this deployment principle: native actuated control remains the default, and coalition membership determines whether the learned supervisor may request a limited green extension. Coalition value therefore measures incremental benefit over an operational baseline.
 
 ## 2.4 Cooperative-game stability in transportation
 
-Cooperative game theory distinguishes contribution attribution from stability. The Shapley value averages marginal contributions over coalition orders, while the core asks whether any coalition can improve on its assigned share. When the core is empty, least-core and nucleolus concepts quantify unavoidable dissatisfaction and progressively minimize the largest coalition excesses. Transportation applications have used these concepts primarily for cost allocation in ridesharing and collaborative logistics. Here, traffic signals are the players and the characteristic function is generated from simulated network-control performance rather than monetary cost.
+Cooperative game theory distinguishes contribution attribution from stability. The Shapley value averages marginal contributions over coalition orders [21], while core concepts formalize coalition blocking/stability [22]. When the core is empty, least-core and nucleolus concepts quantify unavoidable dissatisfaction and progressively minimize the largest coalition excesses [23,24]. Transportation applications have used these concepts for fair or stable allocation in ridesharing and collaborative truckload transportation [25,26]. Here, traffic signals are the players and the characteristic function is generated from simulated network-control performance rather than monetary cost.
 
 To our knowledge, fixed-policy coalition-constrained counterfactual replay combined with complete Shapley, core, and nucleolus analysis has received limited attention in MARL traffic signal control. This study therefore connects cooperative learning, operational participation selection, and cooperative-game stability at the post-training stage.
 
@@ -106,7 +106,7 @@ For stochastic robustness, a pre-specified critical panel is evaluated on held-o
 
 # 4. Experimental Setup
 
-The experiments use the Luxembourg SUMO Traffic (LuST) scenario with the legacy SUMO 0.27 execution stack retained by the validated pipeline. Scenario and simulator revisions are pinned for reproducibility. Nine selected signalized intersections form the player set, while background demand, routing, and native transition sequences remain unchanged.
+The experiments use the Luxembourg SUMO Traffic (LuST) scenario [1,2] with the legacy SUMO 0.27 execution stack retained by the validated pipeline; SUMO provides the microscopic simulation environment [3]. Scenario and simulator revisions are pinned for reproducibility. Nine selected signalized intersections form the player set, while background demand, routing, and native transition sequences remain unchanged.
 
 The exact game uses the AM-peak condition, a 1800 s evaluation horizon, and seed 9001. AM peak was selected because preliminary screening showed meaningful residual intervention activity; Off-peak screening produced no informative interventions. All 512 coalitions are replayed from t=0. Saved-state initialization is not used because the legacy scenario exposed an incompatible bus car-following-model reload path.
 
@@ -200,6 +200,60 @@ The highest-value seed-9001 coalition contains five signals and achieves v(S)=0.
 
 A throughput-protected three-signal coalition provides a conservative alternative and, across five stochastic realizations, both focal selective coalitions outperform the grand coalition in every paired comparison. The results therefore support selective residual authorization rather than universal learned intervention. Future work should extend coalition analysis across traffic periods and demand regimes, investigate online coalition adaptation, incorporate sensing and communication uncertainty, and connect performance-credit allocations to explicit incentive and governance mechanisms.
 
-## References to be finalized
+# References
 
-The final bibliography should include, at minimum: the LuST scenario/traffic-demand validation papers; foundational MAPPO and counterfactual multi-agent credit-assignment work; recent cooperative/communication-aware MARL traffic-signal-control studies; Shapley-reward and Shapley-congestion-attribution TSC studies; residual/safe RL traffic-control studies; and transportation nucleolus/core allocation studies. Every in-text citation should be mapped to a verified DOI/publisher record before submission.
+[1] L. Codeca, R. Frank, and T. Engel, “Luxembourg SUMO Traffic (LuST) Scenario: 24 Hours of Mobility for Vehicular Networking Research,” IEEE VNC, 2015, pp. 1–8. doi: 10.1109/VNC.2015.7385539.
+
+[2] L. Codeca, R. Frank, S. Faye, and T. Engel, “Luxembourg SUMO Traffic (LuST) Scenario: Traffic Demand Evaluation,” IEEE Intelligent Transportation Systems Magazine, vol. 9, no. 2, pp. 52–63, 2017. doi: 10.1109/MITS.2017.2666585.
+
+[3] D. Krajzewicz, “Traffic Simulation with SUMO—Simulation of Urban Mobility,” in Fundamentals of Traffic Simulation, Springer, 2010, pp. 269–294. doi: 10.1007/978-1-4419-6142-6_7.
+
+[4] J. N. Foerster, G. Farquhar, T. Afouras, N. Nardelli, and S. Whiteson, “Counterfactual Multi-Agent Policy Gradients,” AAAI, vol. 32, no. 1, pp. 2974–2982, 2018. doi: 10.1609/AAAI.V32I1.11794.
+
+[5] C. Yu et al., “The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games,” NeurIPS, 2022.
+
+[6] T. Chu, J. Wang, L. Codeca, and Z. Li, “Multi-Agent Deep Reinforcement Learning for Large-Scale Traffic Signal Control,” IEEE Transactions on Intelligent Transportation Systems, vol. 21, no. 3, pp. 1086–1095, 2020. doi: 10.1109/TITS.2019.2901791.
+
+[7] H. Wei et al., “CoLight: Learning Network-level Cooperation for Traffic Signal Control,” CIKM, 2019, pp. 1913–1922. doi: 10.1145/3357384.3357902.
+
+[8] Z. Li, H. Yu, G. Zhang, S. Dong, and C.-Z. Xu, “Network-wide traffic signal control optimization using a multi-agent deep reinforcement learning,” Transportation Research Part C, vol. 125, 103059, 2021. doi: 10.1016/j.trc.2021.103059.
+
+[9] M. Miletić, E. Ivanjko, M. Gregurić, and K. Kušić, “A review of reinforcement learning applications in adaptive traffic signal control,” IET Intelligent Transport Systems, vol. 16, no. 10, pp. 1269–1285, 2022. doi: 10.1049/itr2.12208.
+
+[10] X. Zang et al., “MetaLight: Value-Based Meta-Reinforcement Learning for Traffic Signal Control,” AAAI, vol. 34, no. 1, 2020. doi: 10.1609/aaai.v34i01.5467.
+
+[11] X. (Ben) Song, B. Zhou, and D. Ma, “Cooperative traffic signal control through a counterfactual multi-agent deep actor critic approach,” Transportation Research Part C, vol. 160, 104528, 2024. doi: 10.1016/j.trc.2024.104528.
+
+[12] Y. Bie, Y. Ji, and D. Ma, “Multi-agent Deep Reinforcement Learning collaborative Traffic Signal Control method considering intersection heterogeneity,” Transportation Research Part C, vol. 164, 104663, 2024. doi: 10.1016/j.trc.2024.104663.
+
+[13] Y. Ren et al., “Is cooperative always better? Multi-Agent Reinforcement Learning with explicit neighborhood backtracking for network-wide traffic signal control,” Transportation Research Part C, vol. 179, 105265, 2025. doi: 10.1016/j.trc.2025.105265.
+
+[14] R. Bokade, X. Jin, and C. Amato, “Multi-Agent Reinforcement Learning Based on Representational Communication for Large-Scale Traffic Signal Control,” IEEE Access, vol. 11, pp. 47646–47658, 2023. doi: 10.1109/ACCESS.2023.3275883.
+
+[15] R. Zhu et al., “Auto-learning communication reinforcement learning for multi-intersection traffic light control,” Knowledge-Based Systems, vol. 275, 110696, 2023. doi: 10.1016/j.knosys.2023.110696.
+
+[16] “Hierarchical graph multi-agent reinforcement learning for traffic signal control,” Information Sciences, vol. 634, pp. 55–72, 2023. doi: 10.1016/j.ins.2023.03.087.
+
+[17] “Analyzing communication policies in cooperative multi-agent reinforcement learning for traffic signal control: A simulation-based study,” Simulation Modelling Practice and Theory, vol. 141, 103100, 2025. doi: 10.1016/j.simpat.2025.103100.
+
+[18] Liu et al., “Multiple intersections traffic signal control based on cooperative multi-agent reinforcement learning,” Information Sciences, vol. 647, 119484, 2023. doi: 10.1016/j.ins.2023.119484.
+
+[19] Q. Che, Q. Wang, Y. Wang, X. Liu, W. Wang, and M. Song, “Shapley value-based congestion attribution: A practical multiagent reinforcement learning for traffic signal control,” Journal of Nanjing University (Natural Sciences), vol. 62, no. 1, pp. 59–68, 2026. doi: 10.13232/j.cnki.jnju.2026.01.006.
+
+[20] W. Du, J. Ye, J. Gu, J. Li, H. Wei, and G. Wang, “SafeLight: A Reinforcement Learning Method toward Collision-Free Traffic Signal Control,” AAAI, vol. 37, no. 12, pp. 14801–14810, 2023. doi: 10.1609/aaai.v37i12.26729.
+
+[21] L. S. Shapley, “A Value for n-Person Games,” in Contributions to the Theory of Games II, Princeton University Press, 1953, pp. 307–317.
+
+[22] L. S. Shapley, “On balanced sets and cores,” Naval Research Logistics Quarterly, vol. 14, no. 4, pp. 453–460, 1967. doi: 10.1002/nav.3800140404.
+
+[23] D. Schmeidler, “The Nucleolus of a Characteristic Function Game,” SIAM Journal on Applied Mathematics, vol. 17, no. 6, pp. 1163–1170, 1969. doi: 10.1137/0117107.
+
+[24] E. Kohlberg, “On the Nucleolus of a Characteristic Function Game,” SIAM Journal on Applied Mathematics, vol. 20, no. 1, pp. 62–66, 1971. doi: 10.1137/0120009.
+
+[25] T. Lu and L. Quadrifoglio, “Fair cost allocation for ridesharing services—modeling, mathematical programming and an algorithm to find the nucleolus,” Transportation Research Part B, vol. 121, pp. 41–55, 2019. doi: 10.1016/j.trb.2019.01.001.
+
+[26] N. Öner and G. Kuyzu, “Core stable coalition selection in collaborative truckload transportation procurement,” Transportation Research Part E, vol. 154, 102447, 2021. doi: 10.1016/j.tre.2021.102447.
+
+[27] Y. Du, W. Shen, C. Liu, S. Wang, J. Wang, and J. Ke, “A multi-agent deep reinforcement learning framework for coordinated urban traffic signal and parking lot exit control,” Transportation Research Part C, vol. 192, 105856, 2026. doi: 10.1016/j.trc.2026.105856.
+
+**Reference-audit note:** Entries [16]–[18] retain conservative metadata where the current verification pass did not yet establish every author field from an authoritative bibliographic record. Their DOI/title/article metadata are retained for the next author-metadata audit before journal typesetting.
