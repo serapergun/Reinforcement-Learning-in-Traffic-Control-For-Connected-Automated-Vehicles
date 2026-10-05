@@ -3,6 +3,7 @@
 import argparse,csv,os
 from collections import defaultdict
 import numpy as np
+from math import sqrt
 
 FOCAL=("A1+A3+A4","A3+A4+A7+A8+A9","grand")
 
@@ -38,6 +39,36 @@ def main():
         plt.savefig(os.path.join(args.outdir,"Figure_R3_seedwise_utility.png"),dpi=300);plt.close()
     except ImportError:
         print("WARNING: matplotlib unavailable; table created but figure skipped")
+    # Paired small-sample inference against the grand coalition.
+    try:
+        from scipy.stats import ttest_rel, t, wilcoxon
+        stats=[]
+        grand=np.array([byseed[s]["grand"] for s in sorted(byseed)],float)
+        for k in FOCAL[:-1]:
+            a=np.array([byseed[s][k] for s in sorted(byseed)],float)
+            diff=a-grand; n=len(diff); mean=float(diff.mean()); sd=float(diff.std(ddof=1))
+            se=sd/sqrt(n); crit=float(t.ppf(.975,n-1)); lo=mean-crit*se; hi=mean+crit*se
+            tres=ttest_rel(a,grand)
+            # n=5 => exact Wilcoxon has discrete p-values; report alongside t-test.
+            wres=wilcoxon(diff,alternative="two-sided",method="exact")
+            stats.append({"coalition":k,"reference":"grand","n":n,"mean_paired_advantage":mean,
+                          "ci95_low":lo,"ci95_high":hi,"cohens_dz":mean/sd,
+                          "paired_t":float(tres.statistic),"paired_t_p":float(tres.pvalue),
+                          "wilcoxon_W":float(wres.statistic),"wilcoxon_exact_p":float(wres.pvalue),
+                          "wins":int((diff>0).sum())})
+        with open(os.path.join(args.outdir,"paired_statistics.csv"),"w",newline="") as f:
+            w=csv.DictWriter(f,fieldnames=list(stats[0]));w.writeheader();w.writerows(stats)
+        # Regression targets from the verified five-seed panel.
+        targets={"A1+A3+A4":(.03490287098580091,.0007894,.0625,5),
+                 "A3+A4+A7+A8+A9":(.02945390391,.0078977,.0625,5)}
+        for r in stats:
+            m,tp,wp,wins=targets[r["coalition"]]
+            if abs(r["mean_paired_advantage"]-m)>1e-9 or abs(r["paired_t_p"]-tp)>2e-6 or abs(r["wilcoxon_exact_p"]-wp)>1e-12 or r["wins"]!=wins:
+                raise RuntimeError(f"Statistical regression check failed: {r}")
+        print("Statistical regression checks: PASS")
+        for r in stats: print(r)
+    except ImportError:
+        print("WARNING: scipy unavailable; paired inference skipped")
     for r in out: print(r)
 
 if __name__=="__main__": main()
