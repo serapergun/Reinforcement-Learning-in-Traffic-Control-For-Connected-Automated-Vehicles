@@ -106,7 +106,7 @@ For stochastic robustness, a pre-specified critical panel is evaluated on held-o
 
 # 4. Experimental Setup
 
-The experiments use the Luxembourg SUMO Traffic (LuST) scenario [1,2] with the legacy SUMO 0.27 execution stack retained by the validated pipeline; SUMO provides the microscopic simulation environment [3]. Scenario and simulator revisions are pinned for reproducibility. Nine selected signalized intersections form the player set, while background demand, routing, and native transition sequences remain unchanged.
+The experiments use the Luxembourg SUMO Traffic (LuST) scenario [1,2] with the legacy SUMO 0.27 execution stack retained by the present validated pipeline; SUMO provides the microscopic simulation environment [3]. The public LuST release was originally generated and validated with SUMO 0.26. Accordingly, use of SUMO 0.27 here is reported as a pinned compatibility choice of this experimental pipeline, not as the original LuST validation version. Scenario and simulator revisions are pinned for reproducibility. Nine selected signalized intersections form the player set, while background demand, routing, and native transition sequences remain unchanged.
 
 The exact game uses the AM-peak condition, a 1800 s evaluation horizon, and seed 9001. AM peak was selected because preliminary screening showed meaningful residual intervention activity; Off-peak screening produced no informative interventions. All 512 coalitions are replayed from t=0. Saved-state initialization is not used because the legacy scenario exposed an incompatible bus car-following-model reload path.
 
