@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frozen-checkpoint stakeholder coalition evaluation on legacy LuST/SUMO 0.27."""
+"""Frozen-checkpoint stakeholder coalition evaluation on legacy LuST/SUMO 0.27.\nProtocol: 14 feasible coalitions x 5 paired CRN seeds per traffic condition.\n"""
 import argparse,csv,json,os,sys,random
 import numpy as np, torch
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
