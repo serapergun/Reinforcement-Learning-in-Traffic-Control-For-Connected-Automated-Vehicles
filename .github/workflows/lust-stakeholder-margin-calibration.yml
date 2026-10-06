@@ -1,0 +1,70 @@
+name: LuST Stakeholder Margin Calibration
+on:
+  push:
+    branches: [lust-dynamic-coalition-exp-20260928]
+    paths:
+      - '.github/workflows/lust-stakeholder-margin-calibration.yml'
+      - 'research/lust_dynamic_coalition/calibrate_stakeholder_margin_legacy.py'
+jobs:
+  calibrate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: lust-dynamic-coalition-exp-20260928}
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Inputs
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          mkdir phase2 checkpoint
+          gh run download 36892215405 -n lust-legacy-phase2-dataset-gru-mappo -D phase2
+          gh run download 37365908442 -n stakeholder-mappo-smoke -D checkpoint
+          test -s phase2/selected_9_tls.csv
+          test -s phase2/selected_operating_windows.csv
+          test -s checkpoint/stakeholder_mappo.pt
+      - name: Build SUMO027 and pin LuST
+        run: |
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          cd "$GITHUB_WORKSPACE"
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Calibrate frozen grand-coalition deployment margin
+        env: {SUMO_HOME: "${{ github.workspace }}/legacy_sumo_repo/sumo"}
+        run: |
+          python3 -m py_compile research/lust_dynamic_coalition/calibrate_stakeholder_margin_legacy.py
+          python3 research/lust_dynamic_coalition/calibrate_stakeholder_margin_legacy.py \
+            --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/phase2/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/phase2/selected_operating_windows.csv" \
+            --checkpoint "$GITHUB_WORKSPACE/checkpoint/stakeholder_mappo.pt" \
+            --outdir "$GITHUB_WORKSPACE/margin_calibration" --eval-s 900 \
+            --margins 0.05,0.10,0.15,0.20 --cal-seeds 9001,9002,9003,9004 --holdout-seed 9005
+      - name: Gate
+        run: |
+          python3 - <<'PY'
+          import csv,json,math
+          r=list(csv.DictReader(open("margin_calibration/margin_grid.csv")))
+          x=json.load(open("margin_calibration/calibration.json"))
+          assert len(r)==20 and x["chosen_margin"] in [0.05,0.10,0.15,0.20]
+          assert x["holdout"]["split"]=="holdout"
+          assert math.isfinite(float(x["holdout"]["mean_halting_vehicles"]))
+          print(x)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stakeholder-margin-calibration
+          path: margin_calibration/
+          retention-days: 30
