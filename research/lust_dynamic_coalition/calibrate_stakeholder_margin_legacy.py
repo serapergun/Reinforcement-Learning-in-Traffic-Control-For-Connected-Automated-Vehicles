@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Calibrate native-reference deployment margin for the frozen grand-coalition policy."""
+"""Calibrate native-reference deployment margin for the frozen grand-coalition policy.\nThe hold-out seed is never used by the margin-selection rule.\n"""
 import argparse,csv,json,os,sys,random
 import numpy as np,torch
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
