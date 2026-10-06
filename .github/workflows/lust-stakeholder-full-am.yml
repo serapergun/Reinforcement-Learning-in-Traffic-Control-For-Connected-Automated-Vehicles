@@ -5,6 +5,7 @@ on:
     branches: [lust-dynamic-coalition-exp-20260928]
     paths:
       - '.github/workflows/lust-stakeholder-full-am.yml'
+      - 'research/lust_dynamic_coalition/evaluate_stakeholder_coalitions_legacy.py'
 jobs:
   am:
     runs-on: ubuntu-22.04
