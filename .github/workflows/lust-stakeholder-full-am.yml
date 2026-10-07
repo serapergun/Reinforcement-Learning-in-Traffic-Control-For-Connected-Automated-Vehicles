@@ -67,6 +67,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: stakeholder-full-am
+          name: stakeholder-full-am-margin015
           path: full_am/
           retention-days: 30
