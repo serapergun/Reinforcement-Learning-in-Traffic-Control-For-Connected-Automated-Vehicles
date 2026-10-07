@@ -1,4 +1,5 @@
 name: LuST Stakeholder Full Coalition AM
+# Frozen deployment gate: margin 0.15 selected by calibration run 37506263020.
 on:
   workflow_dispatch:
   push:
