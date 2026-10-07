@@ -52,7 +52,7 @@ jobs:
             --windows "$GITHUB_WORKSPACE/phase2/selected_operating_windows.csv" \
             --checkpoint "$GITHUB_WORKSPACE/checkpoint/stakeholder_mappo.pt" \
             --outdir "$GITHUB_WORKSPACE/full_am" --condition AM --eval-s 900 \
-            --seeds 9001,9002,9003,9004,9005 --deploy-margin 0.05
+            --seeds 9001,9002,9003,9004,9005 --deploy-margin 0.15
       - name: Gate
         run: |
           python3 - <<'PY'
