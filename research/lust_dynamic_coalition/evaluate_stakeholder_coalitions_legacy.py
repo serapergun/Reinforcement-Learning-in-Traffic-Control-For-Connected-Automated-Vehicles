@@ -21,7 +21,6 @@ def main():
     ck=torch.load(args.checkpoint,map_location="cpu")
     meta=ck.get("meta",{})
     assert int(meta.get("obs_dim",-1))==14
-    assert abs(float(meta.get("deterministic_deploy_margin",-1))-args.deploy_margin)<1e-12
     agent=StakeholderMAPPO(9,14,3,42); agent.actor.load_state_dict(ck["actor"]); agent.critic.load_state_dict(ck["critic"])
     agent.actor.eval(); agent.critic.eval()
     coalitions=feasible_coalitions(); assert len(coalitions)==14
@@ -53,7 +52,7 @@ def main():
     write_csv(os.path.join(args.outdir,"coalition_results.csv"),rows)
     write_csv(os.path.join(args.outdir,"native_baselines.csv"),[{"condition":args.condition,"seed":s,**native[s]} for s in seeds])
     prov={"condition":args.condition,"seeds":seeds,"coalitions":14,"evaluations":len(rows),"native_runs":len(seeds),
-          "eval_s":args.eval_s,"deploy_margin":args.deploy_margin,"checkpoint_meta":meta,
+          "eval_s":args.eval_s,"deploy_margin":args.deploy_margin,"checkpoint_original_deploy_margin":meta.get("deterministic_deploy_margin"),"checkpoint_meta":meta,
           "saved_state_used":False,"crn_paired":True}
     json.dump(prov,open(os.path.join(args.outdir,"provenance.json"),"w"),indent=2)
     print(json.dumps(prov,indent=2))
