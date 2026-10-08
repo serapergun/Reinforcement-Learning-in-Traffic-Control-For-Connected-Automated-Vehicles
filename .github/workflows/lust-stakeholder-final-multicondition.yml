@@ -11,7 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        condition: [Off-peak, AM, Lunch, PM]
+        condition: [Lunch, PM]
+        seed: [9101, 9102, 9103, 9104, 9105]
     runs-on: ubuntu-22.04
     timeout-minutes: 350
     steps:
@@ -54,50 +55,68 @@ jobs:
             --windows "$GITHUB_WORKSPACE/phase2/selected_operating_windows.csv" \
             --checkpoint "$GITHUB_WORKSPACE/checkpoint/stakeholder_mappo.pt" \
             --outdir final_result --condition "${{ matrix.condition }}" --eval-s 900 \
-            --seeds 9101,9102,9103,9104,9105 --deploy-margin 0.15
+            --seeds "${{ matrix.seed }}" --deploy-margin 0.15
       - name: Condition gate
         run: |
           python3 - <<'PY'
           import csv,json
           r=list(csv.DictReader(open("final_result/coalition_results.csv")))
           p=json.load(open("final_result/provenance.json"))
-          assert len(r)==70 and len({x["coalition"] for x in r})==14
-          assert p["seeds"]==[9101,9102,9103,9104,9105] and p["deploy_margin"]==0.15
+          assert len(r)==14 and len({x["coalition"] for x in r})==14
+          assert p["seeds"]==[int("${{ matrix.seed }}")] and p["deploy_margin"]==0.15
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: final-condition-${{ matrix.condition }}
+          name: final-condition-${{ matrix.condition }}-seed-${{ matrix.seed }}
           path: final_result/
           retention-days: 30
   aggregate:
     needs: evaluate
     runs-on: ubuntu-22.04
     steps:
+      - name: Download successful earlier AM and Off-peak artifacts
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          mkdir -p condition_artifacts
+          gh run download 37728223583 -R "${{ github.repository }}" -n final-condition-AM -D condition_artifacts/final-condition-AM
+          gh run download 37728223583 -R "${{ github.repository }}" -n final-condition-Off-peak -D condition_artifacts/final-condition-Off-peak
       - uses: actions/download-artifact@v4
         with:
-          pattern: final-condition-*
+          pattern: final-condition-*-seed-*
           path: condition_artifacts
-      - name: Verify and combine
+      - name: Verify and combine with exact seed coverage
         run: |
           python3 - <<'PY'
           import csv,json,pathlib
           root=pathlib.Path("condition_artifacts")
-          conds=["Off-peak","AM","Lunch","PM"]; rows=[]; baselines=[]
+          conds=["Off-peak","AM","Lunch","PM"]
+          seeds=[9101,9102,9103,9104,9105]
+          rows=[]; baselines=[]
           for c in conds:
-              d=root/("final-condition-"+c)
-              r=list(csv.DictReader(open(d/"coalition_results.csv")))
-              n=list(csv.DictReader(open(d/"native_baselines.csv")))
-              p=json.load(open(d/"provenance.json"))
-              assert len(r)==70 and len(n)==5 and p["condition"]==c
-              assert p["deploy_margin"]==0.15 and p["seeds"]==[9101,9102,9103,9104,9105]
-              assert len({x["coalition"] for x in r})==14 and len({x["seed"] for x in r})==5
-              rows+=r; baselines+=n
+              parts=[root/("final-condition-"+c)] if c in ("Off-peak","AM") else [root/("final-condition-"+c+"-seed-"+str(s)) for s in seeds]
+              cr=[]; nb=[]
+              for d in parts:
+                  assert d.is_dir(),f"Missing artifact {d}"
+                  r=list(csv.DictReader(open(d/"coalition_results.csv")))
+                  n=list(csv.DictReader(open(d/"native_baselines.csv")))
+                  p=json.load(open(d/"provenance.json"))
+                  expected=seeds if c in ("Off-peak","AM") else [int(d.name.rsplit("-",1)[-1])]
+                  assert p["condition"]==c and p["seeds"]==expected and p["deploy_margin"]==0.15
+                  assert len(r)==14*len(expected) and len(n)==len(expected)
+                  cr+=r;nb+=n
+              assert len(cr)==70 and len(nb)==5
+              assert {(x["coalition"],int(x["seed"])) for x in cr}=={(co,s) for co in {x["coalition"] for x in cr} for s in seeds}
+              assert len({x["coalition"] for x in cr})==14
+              assert {int(x["seed"]) for x in nb}==set(seeds)
+              assert len({int(x["seed"]) for x in nb})==5
+              rows+=cr;baselines+=nb
           assert len(rows)==280 and len(baselines)==20
           for name,data in [("final_all_conditions.csv",rows),("final_native_baselines.csv",baselines)]:
+              keys=list(dict.fromkeys(k for r in data for k in r))
               with open(name,"w",newline="") as f:
-                  w=csv.DictWriter(f,fieldnames=list(data[0]));w.writeheader();w.writerows(data)
-          json.dump({"conditions":conds,"seeds":[9101,9102,9103,9104,9105],"deploy_margin":0.15,"coalition_evaluations":280,"native_runs":20,"frozen":True},open("final_provenance.json","w"),indent=2)
+                  w=csv.DictWriter(f,fieldnames=keys);w.writeheader();w.writerows(data)
+          json.dump({"conditions":conds,"seeds":seeds,"deploy_margin":0.15,"coalition_evaluations":280,"native_runs":20,"frozen":True,"reused_successful_run":37728223583},open("final_provenance.json","w"),indent=2)
           print("PASS: 280 coalition evaluations and 20 native baselines")
           PY
       - uses: actions/upload-artifact@v4
