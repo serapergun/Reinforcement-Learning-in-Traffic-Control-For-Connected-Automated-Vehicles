@@ -7,9 +7,13 @@ on:
     paths:
       - '.github/workflows/lust-stakeholder-final-multicondition.yml'
 jobs:
-  final:
+  evaluate:
+    strategy:
+      fail-fast: false
+      matrix:
+        condition: [Off-peak, AM, Lunch, PM]
     runs-on: ubuntu-22.04
-    timeout-minutes: 720
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
         with: {ref: lust-dynamic-coalition-exp-20260928}
@@ -27,7 +31,7 @@ jobs:
           test -s phase2/selected_9_tls.csv
           test -s phase2/selected_operating_windows.csv
           test -s checkpoint/stakeholder_mappo.pt
-      - name: Build SUMO027 and pin LuST
+      - name: Build pinned SUMO and LuST
         run: |
           git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
           cd legacy_sumo_repo/sumo
@@ -40,54 +44,66 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           git clone https://github.com/lcodeca/LuSTScenario.git official_lust
           git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
-      - name: Evaluate four conditions
+      - name: Evaluate condition
         env: {SUMO_HOME: "${{ github.workspace }}/legacy_sumo_repo/sumo"}
         run: |
-          python3 -m py_compile research/lust_dynamic_coalition/evaluate_stakeholder_coalitions_legacy.py
-          for C in Off-peak AM Lunch PM; do
-            O="$GITHUB_WORKSPACE/final_${C}"
-            python3 research/lust_dynamic_coalition/evaluate_stakeholder_coalitions_legacy.py \
-              --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools" \
-              --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
-              --selection "$GITHUB_WORKSPACE/phase2/selected_9_tls.csv" \
-              --windows "$GITHUB_WORKSPACE/phase2/selected_operating_windows.csv" \
-              --checkpoint "$GITHUB_WORKSPACE/checkpoint/stakeholder_mappo.pt" \
-              --outdir "$O" --condition "$C" --eval-s 900 \
-              --seeds 9101,9102,9103,9104,9105 --deploy-margin 0.15
-          done
-      - name: Final gate and aggregate
+          python3 research/lust_dynamic_coalition/evaluate_stakeholder_coalitions_legacy.py \
+            --sumo "$SUMO_HOME/bin/sumo" --sumo-tools "$SUMO_HOME/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/phase2/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/phase2/selected_operating_windows.csv" \
+            --checkpoint "$GITHUB_WORKSPACE/checkpoint/stakeholder_mappo.pt" \
+            --outdir final_result --condition "${{ matrix.condition }}" --eval-s 900 \
+            --seeds 9101,9102,9103,9104,9105 --deploy-margin 0.15
+      - name: Condition gate
         run: |
           python3 - <<'PY'
-          import csv,json,os
-          conds=["Off-peak","AM","Lunch","PM"]; allrows=[]; allnative=[]
-          for c in conds:
-              d="final_"+c
-              r=list(csv.DictReader(open(d+"/coalition_results.csv")))
-              n=list(csv.DictReader(open(d+"/native_baselines.csv")))
-              p=json.load(open(d+"/provenance.json"))
-              assert len(r)==70 and len(n)==5
-              assert p["deploy_margin"]==0.15 and p["seeds"]==[9101,9102,9103,9104,9105]
-              assert len({x["coalition"] for x in r})==14 and len({x["seed"] for x in r})==5
-              allrows += r; allnative += n
-          assert len(allrows)==280 and len(allnative)==20
-          keys=list(allrows[0])
-          with open("final_all_conditions.csv","w",newline="") as f:
-              w=csv.DictWriter(f,fieldnames=keys); w.writeheader(); w.writerows(allrows)
-          keysn=list(allnative[0])
-          with open("final_native_baselines.csv","w",newline="") as f:
-              w=csv.DictWriter(f,fieldnames=keysn); w.writeheader(); w.writerows(allnative)
-          json.dump({"conditions":conds,"seeds":[9101,9102,9103,9104,9105],"coalitions":14,
-                     "coalition_evaluations":280,"native_runs":20,"deploy_margin":0.15,
-                     "frozen_after_calibration":True,"disjoint_from_calibration_seeds":True},
-                    open("final_provenance.json","w"),indent=2)
-          print("FINAL GATE PASSED: 280 coalition evaluations + 20 paired native baselines")
+          import csv,json
+          r=list(csv.DictReader(open("final_result/coalition_results.csv")))
+          p=json.load(open("final_result/provenance.json"))
+          assert len(r)==70 and len({x["coalition"] for x in r})==14
+          assert p["seeds"]==[9101,9102,9103,9104,9105] and p["deploy_margin"]==0.15
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          name: final-condition-${{ matrix.condition }}
+          path: final_result/
+          retention-days: 30
+  aggregate:
+    needs: evaluate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: final-condition-*
+          path: condition_artifacts
+      - name: Verify and combine
+        run: |
+          python3 - <<'PY'
+          import csv,json,pathlib
+          root=pathlib.Path("condition_artifacts")
+          conds=["Off-peak","AM","Lunch","PM"]; rows=[]; baselines=[]
+          for c in conds:
+              d=root/("final-condition-"+c)
+              r=list(csv.DictReader(open(d/"coalition_results.csv")))
+              n=list(csv.DictReader(open(d/"native_baselines.csv")))
+              p=json.load(open(d/"provenance.json"))
+              assert len(r)==70 and len(n)==5 and p["condition"]==c
+              assert p["deploy_margin"]==0.15 and p["seeds"]==[9101,9102,9103,9104,9105]
+              assert len({x["coalition"] for x in r})==14 and len({x["seed"] for x in r})==5
+              rows+=r; baselines+=n
+          assert len(rows)==280 and len(baselines)==20
+          for name,data in [("final_all_conditions.csv",rows),("final_native_baselines.csv",baselines)]:
+              with open(name,"w",newline="") as f:
+                  w=csv.DictWriter(f,fieldnames=list(data[0]));w.writeheader();w.writerows(data)
+          json.dump({"conditions":conds,"seeds":[9101,9102,9103,9104,9105],"deploy_margin":0.15,"coalition_evaluations":280,"native_runs":20,"frozen":True},open("final_provenance.json","w"),indent=2)
+          print("PASS: 280 coalition evaluations and 20 native baselines")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
           name: stakeholder-final-multicondition-margin015
           path: |
-            final_*/
             final_all_conditions.csv
             final_native_baselines.csv
             final_provenance.json
