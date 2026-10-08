@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Frozen policy: all-coalition AM margin calibration with disjoint holdout seeds."""
+"""Frozen policy: all-coalition AM margin calibration with disjoint holdout seeds.
+GitHub Actions executes the complete margin grid and retains failures as diagnostics.
+"""
 import argparse,json,os,random,sys
 import numpy as np,torch
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
