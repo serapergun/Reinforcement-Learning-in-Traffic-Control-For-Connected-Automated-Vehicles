@@ -14,6 +14,8 @@ def main():
     ap.add_argument("--eval-s",type=int,default=900)
     ap.add_argument("--seeds",default="9001,9002,9003,9004,9005")
     ap.add_argument("--deploy-margin",type=float,default=0.05)
+    ap.add_argument("--coalition-start",type=int,default=0)
+    ap.add_argument("--coalition-end",type=int,default=14)
     args=ap.parse_args(); os.makedirs(args.outdir,exist_ok=True)
     sys.path.insert(0,os.path.abspath(args.sumo_tools)); import traci
     sel=read_csv(args.selection); wins={r["condition"]:int(float(r["selected_hour"])) for r in read_csv(args.windows)}
@@ -24,6 +26,8 @@ def main():
     agent=StakeholderMAPPO(9,14,3,42); agent.actor.load_state_dict(ck["actor"]); agent.critic.load_state_dict(ck["critic"])
     agent.actor.eval(); agent.critic.eval()
     coalitions=feasible_coalitions(); assert len(coalitions)==14
+    assert 0<=args.coalition_start<args.coalition_end<=14
+    coalitions=coalitions[args.coalition_start:args.coalition_end]
     begin=wins[args.condition]*3600
     native={}
     for seed in seeds:
@@ -45,13 +49,13 @@ def main():
             eligible=float(s.get("mask_eligible_slots",0))
             row["eligible_intervention_fraction"]=float(s.get("interventions",0))/max(eligible,1.0)
             rows.append(row)
-    assert len(rows)==14*len(seeds)
+    assert len(rows)==len(coalitions)*len(seeds)
     assert len({(r["coalition"],r["seed"]) for r in rows})==len(rows)
     finite=("mean_halting_vehicles","mean_waiting_time_lane_sum_s","CO2_kg_selected_approaches")
     assert all(np.isfinite(float(r[k])) for r in rows for k in finite)
     write_csv(os.path.join(args.outdir,"coalition_results.csv"),rows)
     write_csv(os.path.join(args.outdir,"native_baselines.csv"),[{"condition":args.condition,"seed":s,**native[s]} for s in seeds])
-    prov={"condition":args.condition,"seeds":seeds,"coalitions":14,"evaluations":len(rows),"native_runs":len(seeds),
+    prov={"condition":args.condition,"seeds":seeds,"coalitions":len(coalitions),"coalition_start":args.coalition_start,"coalition_end":args.coalition_end,"evaluations":len(rows),"native_runs":len(seeds),
           "eval_s":args.eval_s,"deploy_margin":args.deploy_margin,"checkpoint_original_deploy_margin":meta.get("deterministic_deploy_margin"),"checkpoint_meta":meta,
           "saved_state_used":False,"crn_paired":True}
     json.dump(prov,open(os.path.join(args.outdir,"provenance.json"),"w"),indent=2)
