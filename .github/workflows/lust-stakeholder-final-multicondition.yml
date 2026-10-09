@@ -11,10 +11,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        condition: [Lunch, PM]
-        seed: [9101, 9102, 9103, 9104, 9105]
+        coalition_start: [0, 4, 8, 12]
     runs-on: ubuntu-22.04
-    timeout-minutes: 350
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
         with: {ref: lust-dynamic-coalition-exp-20260928}
@@ -54,36 +53,40 @@ jobs:
             --selection "$GITHUB_WORKSPACE/phase2/selected_9_tls.csv" \
             --windows "$GITHUB_WORKSPACE/phase2/selected_operating_windows.csv" \
             --checkpoint "$GITHUB_WORKSPACE/checkpoint/stakeholder_mappo.pt" \
-            --outdir final_result --condition "${{ matrix.condition }}" --eval-s 900 \
-            --seeds "${{ matrix.seed }}" --deploy-margin 0.15
+            --outdir final_result --condition PM --eval-s 900 \
+            --seeds 9103 --deploy-margin 0.15 \
+            --coalition-start "${{ matrix.coalition_start }}" --coalition-end "$(( ${{ matrix.coalition_start }} + 4 > 14 ? 14 : ${{ matrix.coalition_start }} + 4 ))"
       - name: Condition gate
         run: |
           python3 - <<'PY'
           import csv,json
           r=list(csv.DictReader(open("final_result/coalition_results.csv")))
           p=json.load(open("final_result/provenance.json"))
-          assert len(r)==14 and len({x["coalition"] for x in r})==14
-          assert p["seeds"]==[int("${{ matrix.seed }}")] and p["deploy_margin"]==0.15
+          assert len(r)==min(4,14-int("${{ matrix.coalition_start }}"))
+          assert p["seeds"]==[9103] and p["deploy_margin"]==0.15
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: final-condition-${{ matrix.condition }}-seed-${{ matrix.seed }}
+          name: final-condition-PM-seed-9103-part-${{ matrix.coalition_start }}
           path: final_result/
           retention-days: 30
   aggregate:
     needs: evaluate
     runs-on: ubuntu-22.04
     steps:
-      - name: Download successful earlier AM and Off-peak artifacts
+      - name: Download previously successful AM, Off-peak, Lunch and PM seeds
         env: {GH_TOKEN: "${{ github.token }}"}
         run: |
           mkdir -p condition_artifacts
-          gh run download 37728223583 -R "${{ github.repository }}" -n final-condition-AM -D condition_artifacts/final-condition-AM
-          gh run download 37728223583 -R "${{ github.repository }}" -n final-condition-Off-peak -D condition_artifacts/final-condition-Off-peak
+          for c in AM Off-peak; do gh run download 37728223583 -R "${{ github.repository }}" -n "final-condition-$c" -D "condition_artifacts/final-condition-$c"; done
+          for s in 9101 9102 9103 9104 9105; do gh run download 37802166447 -R "${{ github.repository }}" -n "final-condition-Lunch-seed-$s" -D "condition_artifacts/final-condition-Lunch-seed-$s"; done
+          for s in 9101 9102 9104 9105; do gh run download 37802166447 -R "${{ github.repository }}" -n "final-condition-PM-seed-$s" -D "condition_artifacts/final-condition-PM-seed-$s"; done
+      - name: Previously successful artifacts verified
+        run: test -s condition_artifacts/final-condition-AM/coalition_results.csv
       - uses: actions/download-artifact@v4
         with:
-          pattern: final-condition-*-seed-*
+          pattern: final-condition-PM-seed-9103-part-*
           path: condition_artifacts
       - name: Verify and combine with exact seed coverage
         run: |
@@ -94,17 +97,18 @@ jobs:
           seeds=[9101,9102,9103,9104,9105]
           rows=[]; baselines=[]
           for c in conds:
-              parts=[root/("final-condition-"+c)] if c in ("Off-peak","AM") else [root/("final-condition-"+c+"-seed-"+str(s)) for s in seeds]
+              parts=[root/("final-condition-"+c)] if c in ("Off-peak","AM") else ([root/("final-condition-PM-seed-9103-part-"+str(k)) for k in (0,4,8,12)]+[root/("final-condition-PM-seed-"+str(s)) for s in (9101,9102,9104,9105)] if c=="PM" else [root/("final-condition-Lunch-seed-"+str(s)) for s in seeds])
               cr=[]; nb=[]
               for d in parts:
                   assert d.is_dir(),f"Missing artifact {d}"
                   r=list(csv.DictReader(open(d/"coalition_results.csv")))
                   n=list(csv.DictReader(open(d/"native_baselines.csv")))
                   p=json.load(open(d/"provenance.json"))
-                  expected=seeds if c in ("Off-peak","AM") else [int(d.name.rsplit("-",1)[-1])]
+                  expected=seeds if c in ("Off-peak","AM") else ([9103] if "-part-" in d.name else [int(d.name.rsplit("-",1)[-1])])
                   assert p["condition"]==c and p["seeds"]==expected and p["deploy_margin"]==0.15
-                  assert len(r)==14*len(expected) and len(n)==len(expected)
-                  cr+=r;nb+=n
+                  assert len(r)==(min(4,14-int(d.name.rsplit("-",1)[-1])) if "-part-" in d.name else 14*len(expected)) and len(n)==len(expected)
+                  cr+=r
+                  if "-part-" not in d.name or d.name.endswith("-part-0"): nb+=n
               assert len(cr)==70 and len(nb)==5
               assert {(x["coalition"],int(x["seed"])) for x in cr}=={(co,s) for co in {x["coalition"] for x in cr} for s in seeds}
               assert len({x["coalition"] for x in cr})==14
