@@ -1,0 +1,78 @@
+name: LuST V6 native SUMO 0.27 smoke
+on:
+  push:
+    branches: [lust-v6-reproducibility-20261119]
+    paths:
+      - '.github/workflows/lust-v6-native-smoke.yml'
+  workflow_dispatch:
+jobs:
+  native-sumo027:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install historic SUMO build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+      - name: Fetch and build pinned SUMO 0.27.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          ./bin/sumo --version | head -3
+      - name: Fetch pinned LuST dataset and check input files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+          test -s official_lust/scenario/lust.net.xml
+          test -s official_lust/scenario/due.actuated.sumocfg
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root=ET.parse('official_lust/scenario/lust.net.xml').getroot()
+          ids={x.attrib['id'] for x in root.findall('tlLogic')}
+          expected={'-17662','-13722','-26466','-28210','-16312','-17612','-18372','-1458','-14740'}
+          assert expected<=ids,(expected-ids)
+          print('PASS: all nine archived LuST traffic signal IDs exist')
+          PY
+      - name: Run actual native LuST simulation for 7200 seconds
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p v6_native_smoke
+          cd official_lust/scenario
+          ../../legacy_sumo_repo/sumo/bin/sumo -c due.actuated.sumocfg --seed 9101 --end 7200 --no-step-log true --summary-output ../../v6_native_smoke/summary.xml --log ../../v6_native_smoke/sumo.log
+          cd ../..
+          python3 - <<'PY'
+          import hashlib,json,xml.etree.ElementTree as ET,pathlib
+          p=pathlib.Path('v6_native_smoke/summary.xml')
+          root=ET.parse(p).getroot()
+          steps=root.findall('step')
+          assert steps,'No SUMO steps recorded'
+          final=steps[-1].attrib
+          assert float(final['time'])>=7199,final
+          data={'status':'native SUMO0.27 7200-s smoke; NOT trained MAPPO or V5 result',
+                'steps':len(steps),'final':final,
+                'scenario_commit':'c4bd5bd3751d426d42a9a1749c815e47ea188549',
+                'sumo_commit':'7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b',
+                'seed':9101,
+                'summary_sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+          pathlib.Path('v6_native_smoke/provenance.json').write_text(json.dumps(data,indent=2))
+          print(json.dumps(data,indent=2))
+          PY
+      - name: Upload exact native smoke outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-v6-real-native-sumo027-smoke
+          path: v6_native_smoke/
+          retention-days: 90
