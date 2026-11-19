@@ -43,3 +43,37 @@ jobs:
           assert j['summary']['MO+VI']['n_seeds']==2
           print('PASS: paired-data audit contract')
           PY
+          python3 - <<'PY'
+          import csv
+          rows=list(csv.DictReader(open('synthetic_v7.csv')))
+          native=[r for r in rows if r['coalition']=='native']
+          with open('synthetic_independent.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=rows[0].keys())
+              w.writeheader();w.writerows(native)
+          PY
+          python3 research/lust_dynamic_coalition/crosscheck_v7_native.py \
+            --paired synthetic_v7.csv --independent synthetic_independent.csv \
+            --output synthetic_native_replication.json
+          python3 - <<'PY'
+          import json
+          out=json.load(open('synthetic_native_replication.json'))
+          assert out['status']=='PASS'
+          assert out['condition_seed_pairs']==2
+          print('PASS: independent same-seed native crosscheck')
+          PY
+          python3 - <<'PY'
+          import csv
+          rows=list(csv.DictReader(open('synthetic_independent.csv')))
+          rows[0]['mean_waiting_time_lane_sum_s']='101.0'
+          with open('synthetic_mismatch.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=rows[0])
+              w.writeheader();w.writerows(rows)
+          PY
+          if python3 research/lust_dynamic_coalition/crosscheck_v7_native.py \
+            --paired synthetic_v7.csv --independent synthetic_mismatch.csv \
+            --output synthetic_mismatch_report.json; then
+            echo 'ERROR: inconsistent native records escaped the crosscheck' >&2
+            exit 1
+          else
+            echo 'PASS: independent-run crosscheck rejects mismatched native outcomes'
+          fi
