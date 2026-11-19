@@ -1,0 +1,84 @@
+name: LuST V6 stakeholder MAPPO pilot
+on:
+  push:
+    branches: [lust-v6-reproducibility-20261119]
+    paths: ['.github/workflows/lust-v6-mappo-retrain.yml']
+  workflow_dispatch:
+jobs:
+  retrain-pilot:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 320
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Reconstruct pinned TLS and operating window CSVs
+        run: |
+          mkdir -p phase2 v6_retraining
+          python3 - <<'PY'
+          import csv
+          pairs=[('A1','-17662'),('A2','-13722'),('A3','-26466'),('A4','-28210'),('A5','-16312'),('A6','-17612'),('A7','-18372'),('A8','-1458'),('A9','-14740')]
+          with open('phase2/selected_9_tls.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['agent_alias','tls_id'])
+              w.writeheader();w.writerows({'agent_alias':a,'tls_id':i} for a,i in pairs)
+          with open('phase2/selected_operating_windows.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['condition','selected_hour'])
+              w.writeheader();w.writerows({'condition':c,'selected_hour':h} for c,h in [('Off-peak',2),('AM',8),('Lunch',13),('PM',18)])
+          PY
+      - name: Pinned simulator and official scenario
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          cd "$GITHUB_WORKSPACE"
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: New MAPPO training pilot, not original checkpoint recovery
+        shell: bash
+        run: |
+          python3 research/lust_dynamic_coalition/train_stakeholder_mappo_legacy.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/phase2/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/phase2/selected_operating_windows.csv" \
+            --outdir "$GITHUB_WORKSPACE/v6_retraining" \
+            --episodes 14 --train-s 300 --eval-s 300 --seed 42 --eval-seed 9001
+      - name: Audit checkpoint and provenance
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import pathlib,json,hashlib
+          p=pathlib.Path('v6_retraining')
+          p.mkdir(exist_ok=True)
+          ck=p/'stakeholder_mappo.pt'
+          d={'type':'NEW V6 pilot, NOT recovered 2026 checkpoint',
+             'checkpoint_present':ck.is_file(),
+             'sha256':hashlib.sha256(ck.read_bytes()).hexdigest() if ck.is_file() else None,
+             'sumo_commit':'7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b',
+             'lust_commit':'c4bd5bd3751d426d42a9a1749c815e47ea188549',
+             'episodes':14,'train_s':300,'eval_s':300,
+             'input_selection':'reconstructed from VALIDATION_STATUS.md'}
+          (p/'provenance_v6.json').write_text(json.dumps(d,indent=2))
+          print(d)
+          PY
+      - name: Upload pilot checkpoint and training logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-v6-new-mappo-pilot
+          path: |
+            v6_retraining/
+            phase2/selected_9_tls.csv
+            phase2/selected_operating_windows.csv
+          retention-days: 90
