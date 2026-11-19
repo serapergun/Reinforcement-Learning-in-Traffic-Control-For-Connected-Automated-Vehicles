@@ -25,7 +25,7 @@ jobs:
                        'mean_halting_vehicles':val,
                        'CO2_kg_selected_approaches':val,
                        'arrived_vehicles_global':val,
-                       'interventions':j}
+                       'interventions':j,'decision_steps':90,'mask_eligible_slots':0}
                   for metric in ('mean_waiting_time_lane_sum_s','mean_halting_vehicles','CO2_kg_selected_approaches','arrived_vehicles_global'):
                       if j>0:row['delta_pct_'+metric]=100*(val-baseline)/baseline
                   rows.append(row)
