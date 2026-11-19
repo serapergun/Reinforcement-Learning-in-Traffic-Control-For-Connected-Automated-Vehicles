@@ -1,0 +1,49 @@
+name: LuST V6 reproducibility gate
+on:
+  push:
+    branches: [lust-v6-reproducibility-20261119]
+    paths:
+      - '.github/workflows/lust-v6-reproducibility.yml'
+  workflow_dispatch:
+jobs:
+  static-and-provenance-gate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert archived source and input contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s research/lust_dynamic_coalition/stakeholder_observation.py
+          test -s research/lust_dynamic_coalition/train_stakeholder_mappo_legacy.py
+          test -s research/lust_dynamic_coalition/evaluate_stakeholder_coalitions_legacy.py
+          python3 - <<'PY'
+          import ast, pathlib, json, hashlib
+          root=pathlib.Path('research/lust_dynamic_coalition')
+          names=['stakeholder_observation.py','train_stakeholder_mappo_legacy.py','train_mappo_legacy_replay.py','evaluate_stakeholder_coalitions_legacy.py']
+          out={}
+          for name in names:
+              data=(root/name).read_bytes()
+              ast.parse(data, filename=name)
+              out[name]=hashlib.sha256(data).hexdigest()
+          import sys
+          sys.path.insert(0,str(root.resolve()))
+          from stakeholder_observation import feasible_coalitions
+          cs=feasible_coalitions()
+          assert len(cs)==14
+          assert len(set(cs))==14
+          assert ('EC',) not in cs
+          assert ('TA','MO','VI','EC') in cs
+          json.dump({'gate':'PASS','status':'source-only; NO SUMO experiment','coalitions':14,
+                     'sha256':out,'archived_lust_commit':'c4bd5bd3751d426d42a9a1749c815e47ea188549',
+                     'archived_sumo_commit':'7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b',
+                     'archived_checkpoint_available':False},open('v6_static_gate.json','w'),indent=2)
+          print('PASS: archived source and coalition feasibility')
+          PY
+      - name: Publish audit record
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-v6-static-gate
+          path: v6_static_gate.json
+          retention-days: 90
