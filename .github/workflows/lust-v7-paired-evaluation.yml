@@ -84,6 +84,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          status="$(gh run view 44553818805 -R "${{ github.repository }}" --json conclusion -q .conclusion)"
+          test "$status" = "success" || { echo "BLOCK: native baseline conclusion=$status (requires success)"; exit 1; }
           mkdir -p v7_independent_native
           gh run download 44553818805 -R "${{ github.repository }}" -n lust-v7-native-am-seeds-9301-9302 -D v7_independent_native
           test -s v7_independent_native/v7_native_baselines.csv
