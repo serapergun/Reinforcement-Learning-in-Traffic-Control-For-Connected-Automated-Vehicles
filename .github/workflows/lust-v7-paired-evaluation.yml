@@ -78,6 +78,19 @@ jobs:
           python3 research/lust_dynamic_coalition/audit_v7_paired.py \
             --input v7_results/v7_paired_pilot.csv \
             --output v7_results/v7_paired_audit.json
+      - name: Download separate native baseline experiment for reproducibility audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p v7_independent_native
+          gh run download 44553818805 -R "${{ github.repository }}" -n lust-v7-native-am-seeds-9301-9302 -D v7_independent_native
+          test -s v7_independent_native/v7_native_baselines.csv
+      - name: Verify native trajectory and outcome reproducibility across independent jobs
+        run: |
+          python3 research/lust_dynamic_coalition/crosscheck_v7_native.py \
+            --paired v7_results/v7_paired_pilot.csv \
+            --independent v7_independent_native/v7_native_baselines.csv \
+            --output v7_results/v7_native_replication_audit.json
       - name: Upload result files and failure diagnostics
         if: always()
         uses: actions/upload-artifact@v4
