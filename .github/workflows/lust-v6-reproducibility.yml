@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Install static-gate dependencies
+        run: python3 -m pip install --user numpy
       - name: Assert archived source and input contracts
         shell: bash
         run: |
