@@ -21,6 +21,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          status="$(gh run view 44533285635 -R "${{ github.repository }}" --json conclusion -q .conclusion)"
+          test "$status" = "success" || { echo "BLOCK: V6 training conclusion=$status (requires success)"; exit 1; }
           mkdir -p v6_input
           gh run download 44533285635 -R "${{ github.repository }}" -n lust-v6-new-mappo-pilot -D v6_input
           test -s v6_input/v6_retraining/stakeholder_mappo.pt
