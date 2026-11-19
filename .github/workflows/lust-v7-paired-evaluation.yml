@@ -73,6 +73,11 @@ jobs:
                   assert math.isfinite(float(r['mean_waiting_time_lane_sum_s']))
           print('PASS 8 actual SUMO paired pilot rows; descriptive only')
           PY
+      - name: Strict paired evaluation audit
+        run: |
+          python3 research/lust_dynamic_coalition/audit_v7_paired.py \
+            --input v7_results/v7_paired_pilot.csv \
+            --output v7_results/v7_paired_audit.json
       - name: Upload result files and failure diagnostics
         if: always()
         uses: actions/upload-artifact@v4
