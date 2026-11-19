@@ -1,0 +1,45 @@
+name: LuST V7 paired audit unit test
+on:
+  push:
+    branches: [lust-v6-reproducibility-20261119]
+    paths: ['.github/workflows/lust-v7-audit-unit.yml']
+  workflow_dispatch:
+jobs:
+  synthetic-contract-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check audit script syntax and synthetic paired consistency
+        run: |
+          python3 -m py_compile research/lust_dynamic_coalition/audit_v7_paired.py
+          python3 - <<'PY'
+          import csv
+          rows=[]
+          coalitions=['native','MO+VI','MO+VI+EC','TA+MO+VI+EC']
+          for seed in [9301,9302]:
+              for j,c in enumerate(coalitions):
+                  baseline=100.
+                  val=baseline*(1+(.02*j))
+                  row={'condition':'AM','seed':seed,'coalition':c,
+                       'mean_waiting_time_lane_sum_s':val,
+                       'mean_halting_vehicles':val,
+                       'CO2_kg_selected_approaches':val,
+                       'arrived_vehicles_global':val,
+                       'interventions':j}
+                  for metric in ('mean_waiting_time_lane_sum_s','mean_halting_vehicles','CO2_kg_selected_approaches','arrived_vehicles_global'):
+                      if j>0:row['delta_pct_'+metric]=100*(val-baseline)/baseline
+                  rows.append(row)
+          with open('synthetic_v7.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=list(dict.fromkeys(k for row in rows for k in row)))
+              w.writeheader();w.writerows(rows)
+          PY
+          python3 research/lust_dynamic_coalition/audit_v7_paired.py --input synthetic_v7.csv --output synthetic_audit.json
+          python3 - <<'PY'
+          import json
+          j=json.load(open('synthetic_audit.json'))
+          assert j['status']=='DESCRIPTIVE_ONLY'
+          assert j['total_rows']==8
+          assert len(j['paired_rows'])==6
+          assert j['summary']['MO+VI']['n_seeds']==2
+          print('PASS: paired-data audit contract')
+          PY
