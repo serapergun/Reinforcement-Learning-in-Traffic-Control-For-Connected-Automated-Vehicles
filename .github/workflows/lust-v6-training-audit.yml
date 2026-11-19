@@ -1,0 +1,46 @@
+name: LuST V6 training evidence audit
+on:
+  push:
+    branches: [lust-v6-reproducibility-20261119]
+    paths: ['.github/workflows/lust-v6-training-audit.yml']
+  workflow_dispatch:
+jobs:
+  audit-training-artifact:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download completed new-MAPPO training artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          result="$(gh run view 44533285635 -R "${{ github.repository }}" --json conclusion -q .conclusion)"
+          test "$result" = success
+          mkdir -p training_artifact
+          gh run download 44533285635 -R "${{ github.repository }}" -n lust-v6-new-mappo-pilot -D training_artifact
+          test -s training_artifact/v6_retraining/training_history.csv
+          test -s training_artifact/v6_retraining/stakeholder_mappo.pt
+      - name: Independently audit new checkpoint identity and coverage
+        run: |
+          python3 research/lust_dynamic_coalition/audit_v6_training_coverage.py \
+            --training-dir training_artifact/v6_retraining \
+            --output publication_audit/v6_training_evidence.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('publication_audit/v6_training_evidence.json'))
+          assert x['status']=='AUDITED_PILOT_NOT_PUBLICATION_READY'
+          assert x['episode_count']==14
+          assert x['feasible_coalitions']==14
+          assert x['total_condition_coalition_pairs']==56
+          assert x['seen_condition_coalition_pairs']==14
+          assert x['smoke_intervention_fraction']==1.0
+          assert x['smoke_plus6_actions']==54
+          print('PASS: archived training artifact checked; pilot remains non-publication-ready')
+          PY
+      - name: Upload independent training audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-v6-training-evidence-audit
+          path: publication_audit/
+          retention-days: 90
