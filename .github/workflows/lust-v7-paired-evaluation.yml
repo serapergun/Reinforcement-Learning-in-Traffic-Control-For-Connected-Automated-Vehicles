@@ -1,0 +1,82 @@
+name: LuST V7 independent paired evaluation
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-v6-reproducibility-20261119]
+    paths:
+      - 'research/lust_dynamic_coalition/V7_READY_TO_RUN.md'
+jobs:
+  evaluate-heldout:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 320
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Download NEW checkpoint from V6 training run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p v6_input
+          gh run download 44533285635 -R "${{ github.repository }}" -n lust-v6-new-mappo-pilot -D v6_input
+          test -s v6_input/v6_retraining/stakeholder_mappo.pt
+          test -s v6_input/phase2/selected_9_tls.csv
+          test -s v6_input/phase2/selected_operating_windows.csv
+          python3 - <<'PY'
+          import json
+          d=json.load(open('v6_input/v6_retraining/provenance_v6.json'))
+          assert d.get('checkpoint_present'),d
+          assert d['type'].startswith('NEW V6'),d
+          PY
+      - name: Build pinned SUMO 0.27.0 and fetch official LuST
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          cd "$GITHUB_WORKSPACE"
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Independent heldout SUMO paired pilot
+        run: |
+          python3 research/lust_dynamic_coalition/evaluate_v7_pilot.py \
+            --repo-modules "$GITHUB_WORKSPACE/research/lust_dynamic_coalition" \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/v6_input/phase2/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/v6_input/phase2/selected_operating_windows.csv" \
+            --checkpoint "$GITHUB_WORKSPACE/v6_input/v6_retraining/stakeholder_mappo.pt" \
+            --condition AM --seeds 9301,9302 --eval-s 900 \
+            --deploy-margin 0.15 --outdir "$GITHUB_WORKSPACE/v7_results"
+      - name: Paired coverage gate
+        run: |
+          python3 - <<'PY'
+          import csv,json,math
+          rows=list(csv.DictReader(open('v7_results/v7_paired_pilot.csv')))
+          assert len(rows)==8
+          for seed in (9301,9302):
+              data=[r for r in rows if int(r['seed'])==seed]
+              assert len(data)==4
+              assert {r['coalition'] for r in data}=={'native','MO+VI','MO+VI+EC','TA+MO+VI+EC'}
+              for r in data:
+                  assert math.isfinite(float(r['mean_waiting_time_lane_sum_s']))
+          print('PASS 8 actual SUMO paired pilot rows; descriptive only')
+          PY
+      - name: Upload result files and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-v7-new-checkpoint-paired-pilot
+          path: v7_results/
+          retention-days: 90
