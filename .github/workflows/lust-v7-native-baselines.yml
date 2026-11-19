@@ -1,0 +1,63 @@
+name: LuST V7 independent native AM baselines
+on:
+  push:
+    branches: [lust-v6-reproducibility-20261119]
+    paths:
+      - '.github/workflows/lust-v7-native-baselines.yml'
+  workflow_dispatch:
+jobs:
+  native-am:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Build pinned SUMO 0.27 and pin LuST
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          cd "$GITHUB_WORKSPACE"
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Run actual SUMO 0.27 native AM reference on two heldout seeds
+        run: |
+          python3 research/lust_dynamic_coalition/v7_native_baseline.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --condition AM --seeds 9301,9302 --eval-s 900 \
+            --outdir "$GITHUB_WORKSPACE/v7_native_results"
+      - name: Coverage and numerical validity
+        run: |
+          python3 - <<'PY'
+          import csv,math,json
+          rows=list(csv.DictReader(open('v7_native_results/v7_native_baselines.csv')))
+          assert len(rows)==2
+          assert {int(r['seed']) for r in rows}=={9301,9302}
+          for r in rows:
+              assert r['condition']=='AM' and r['coalition']=='native'
+              for k in ['mean_halting_vehicles','mean_waiting_time_lane_sum_s','CO2_kg_selected_approaches','arrived_vehicles_global']:
+                  assert math.isfinite(float(r[k])),(k,r[k])
+          provenance=json.load(open('v7_native_results/provenance.json'))
+          assert not provenance['checkpoint_used']
+          print('PASS: two actual heldout native SUMO baselines')
+          PY
+      - name: Archive native raw values and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lust-v7-native-am-seeds-9301-9302
+          path: v7_native_results/
+          retention-days: 90
