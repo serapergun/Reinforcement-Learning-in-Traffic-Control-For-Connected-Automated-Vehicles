@@ -1,0 +1,115 @@
+name: LuST V8 frozen policy diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-v8-policy-diagnostics-20261124]
+    paths:
+      - '.github/workflows/lust-v8-policy-diagnostics.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  unit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cd research/lust_dynamic_coalition
+          python3 -m unittest -v test_v8_policy_diagnostics
+  reference:
+    needs: unit
+    runs-on: ubuntu-22.04
+    timeout-minutes: 320
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [9301, 9302]
+        case: [0, 3, 9, 15]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Download NEW checkpoint from V6 training run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status="$(gh run view 44533285635 -R "${{ github.repository }}" --json conclusion -q .conclusion)"
+          test "$status" = "success" || { echo "BLOCK: V6 training conclusion=$status (requires success)"; exit 1; }
+          mkdir -p v6_input
+          gh run download 44533285635 -R "${{ github.repository }}" -n lust-v6-new-mappo-pilot -D v6_input
+          test -s v6_input/v6_retraining/stakeholder_mappo.pt
+          test -s v6_input/phase2/selected_9_tls.csv
+          test -s v6_input/phase2/selected_operating_windows.csv
+          python3 - <<'PY'
+          import json
+          d=json.load(open('v6_input/v6_retraining/provenance_v6.json'))
+          assert d.get('checkpoint_present'),d
+          assert d['type'].startswith('NEW V6'),d
+          PY
+      - name: Build pinned SUMO 0.27.0 and fetch official LuST
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          cd "$GITHUB_WORKSPACE"
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Run V8 reference case
+        run: |
+          python3 research/lust_dynamic_coalition/evaluate_v8_policy_diagnostics.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/v6_input/phase2/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/v6_input/phase2/selected_operating_windows.csv" \
+            --checkpoint "$GITHUB_WORKSPACE/v6_input/v6_retraining/stakeholder_mappo.pt" \
+            --seed ${{ matrix.seed }} --case ${{ matrix.case }} --outdir v8_results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v8-reference-${{ matrix.seed }}-${{ matrix.case }}
+          path: v8_results/
+          retention-days: 90
+  audit:
+    needs: reference
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v8-reference-*
+          path: v8
+      - name: Download V7 verified reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 44557298980 -R "${{ github.repository }}" -n lust-v7-new-checkpoint-paired-pilot -D v7
+      - name: Verify reference equivalence
+        run: |
+          python3 - <<'PY'
+          import csv,json,math,pathlib
+          old=list(csv.DictReader(open('v7/v7_paired_pilot.csv')))
+          new=[r for p in pathlib.Path('v8').rglob('result.csv') for r in csv.DictReader(p.open())]
+          keys=lambda r:(r['seed'],r['coalition'])
+          assert len(old)==len(new)==8
+          assert len({keys(r) for r in new})==8
+          ref={keys(r):r for r in old}
+          assert set(ref)=={keys(r) for r in new}
+          provenance=json.load(open('v7/v7_pilot_provenance.json'))
+          for r in new:
+              for k in ('checkpoint_sha256','selection_sha256','windows_sha256','simulator_sha256'):
+                  assert r[k]==provenance[k],(k,r[k],provenance[k])
+              for k in ('mean_halting_vehicles','mean_waiting_time_lane_sum_s','CO2_kg_selected_approaches','arrived_vehicles_global','interventions','decision_steps','mask_eligible_slots','eligible_action0','eligible_action1','eligible_action2'):
+                  if r['coalition']=='native' and k.startswith('eligible_action'): continue
+                  assert math.isclose(float(r[k]),float(ref[keys(r)][k]),rel_tol=1e-6,abs_tol=1e-7),(keys(r),k,r[k],ref[keys(r)][k])
+          print('PASS: all eight V8 reference cases match V7')
+          PY
