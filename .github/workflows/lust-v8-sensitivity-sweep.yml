@@ -1,0 +1,127 @@
+name: LuST V8 sensitivity sweep
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-v8-policy-diagnostics-20261124]
+    paths:
+      - '.github/workflows/lust-v8-sensitivity-sweep.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  unit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cd research/lust_dynamic_coalition
+          python3 -m unittest -v test_v8_policy_diagnostics
+  reference:
+    needs: unit
+    runs-on: ubuntu-22.04
+    timeout-minutes: 320
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        seed: [9301, 9302]
+        case: [1, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Download NEW checkpoint from V6 training run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status="$(gh run view 44533285635 -R "${{ github.repository }}" --json conclusion -q .conclusion)"
+          test "$status" = "success" || { echo "BLOCK: V6 training conclusion=$status (requires success)"; exit 1; }
+          mkdir -p v6_input
+          gh run download 44533285635 -R "${{ github.repository }}" -n lust-v6-new-mappo-pilot -D v6_input
+          test -s v6_input/v6_retraining/stakeholder_mappo.pt
+          test -s v6_input/phase2/selected_9_tls.csv
+          test -s v6_input/phase2/selected_operating_windows.csv
+          python3 - <<'PY'
+          import json
+          d=json.load(open('v6_input/v6_retraining/provenance_v6.json'))
+          assert d.get('checkpoint_present'),d
+          assert d['type'].startswith('NEW V6'),d
+          PY
+      - name: Build pinned SUMO 0.27.0 and fetch official LuST
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          cd "$GITHUB_WORKSPACE"
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Run V8 reference case
+        run: |
+          python3 research/lust_dynamic_coalition/evaluate_v8_policy_diagnostics.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/v6_input/phase2/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/v6_input/phase2/selected_operating_windows.csv" \
+            --checkpoint "$GITHUB_WORKSPACE/v6_input/v6_retraining/stakeholder_mappo.pt" \
+            --seed ${{ matrix.seed }} --case ${{ matrix.case }} --outdir v8_results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v8-sweep-${{ matrix.seed }}-${{ matrix.case }}
+          path: v8_results/
+          retention-days: 90
+  audit:
+    needs: reference
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v8-sweep-*
+          path: sweep
+      - name: Download verified reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh run view 45404241592 -R "${{ github.repository }}" --json conclusion -q .conclusion)" = success
+          gh run download 45404241592 -R "${{ github.repository }}" -D reference
+      - name: Audit and combine
+        run: |
+          python3 - <<'PY'
+          import csv,json,math,pathlib
+          def rows(root):
+              return [r for p in pathlib.Path(root).rglob('result.csv') for r in csv.DictReader(p.open())]
+          ref=rows('reference'); sweep=rows('sweep')
+          assert len(ref)==8 and len(sweep)==46
+          allrows=ref+sweep
+          assert {(int(r['seed']),int(r['case'])) for r in allrows}=={(s,c) for s in (9301,9302) for c in range(27)}
+          for k in ('checkpoint_sha256','selection_sha256','windows_sha256','simulator_sha256'):
+              assert len({r[k] for r in allrows})==1,k
+          for r in allrows:
+              assert int(r['decision_steps'])==90
+              for k in ('mean_halting_vehicles','mean_waiting_time_lane_sum_s','CO2_kg_selected_approaches','arrived_vehicles_global'):
+                  assert math.isfinite(float(r[k]))
+              if int(r['case']):
+                  n=[int(r['eligible_action'+str(i)]) for i in range(3)]
+                  assert sum(n)==int(r['mask_eligible_slots'])
+                  assert n[1]+n[2]==int(r['interventions'])
+          fields=list(dict.fromkeys(k for r in allrows for k in r))
+          with open('v8_combined.csv','w') as f:
+              w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(sorted(allrows,key=lambda r:(int(r['seed']),int(r['case']))))
+          print('PASS: 54 unique cases, common provenance and finite metrics')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v8-combined-audited
+          path: v8_combined.csv
