@@ -1,0 +1,10 @@
+# V9 selection protocol (pre-results)
+V8 sweep run 45428115304 is exploratory, using frozen V6 pilot checkpoint and AM seeds 9301–9302. Do not report selected configurations as held-out evidence.
+## Diagnostic analysis
+For each coalition and seed, compare each margin with margin 0.15 at scale 1, and each EC scale with scale 1 at margin 0.15. Report paired changes in lane-sum waiting, halting, selected-approach CO2, global arrivals, interventions, eligible slots, eligible intervention fraction, and total extension seconds. Native is the common seed-specific comparator. Report both seeds separately and their descriptive mean. No significance claims with n=2.
+Inspect action probabilities, eligible-only entropy, argmax frequencies and actual actions separately. Margin is a veto to action 0, not a selector of action 1. EC scaling keeps membership fixed; scale zero is not removal of EC membership. The two sweeps do not identify margin-by-scale interactions.
+## Provisional screening rule
+Retain nondominated candidates minimizing waiting, CO2 and extension seconds while maximizing arrivals. As an engineering screening criterion, flag candidates with waiting above native or arrivals below 99% of native on either seed. Do not silently discard failed candidates. If no candidate satisfies constraints, report infeasibility. Thresholds are provisional, not empirical findings.
+## V9 validation
+Use new calibration seeds 9401–9405 and validation seeds 9501–9505; reserve 9601–9620 for final independent evaluation. Extend to all four operating windows. Freeze configuration before final test. Compare native, original frozen MAPPO, calibrated deterministic policy, masked stochastic policy and retrained balanced MAPPO. Separate deployment random seed from traffic seed. Train in complete 56-pair blocks (14 feasible coalitions x 4 windows); use independent training seeds and report learning curves. No claim of original checkpoint recovery.
+Dynamic coalition selection and game-theoretic attribution are later stages; define feasibility and the EC-only counterfactual before computing standard Shapley values.
