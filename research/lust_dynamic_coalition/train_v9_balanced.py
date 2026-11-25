@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Coalition-mask-randomized stakeholder MAPPO on validated SUMO 0.27 residual control."""
+import argparse,csv,json,os,random,sys,time
+import numpy as np, torch
+sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
+from train_mappo_legacy_replay import Env,MAPPO,read_csv,write_csv,native_eval
+from stakeholder_observation import StakeholderObservation,feasible_coalitions,PLAYERS
+
+class StakeholderMAPPO(MAPPO):
+    """Same PPO core, but without the legacy action-0 prior used by the Phase2b controller."""
+    def __init__(self,n,od,na,seed=42):
+        super().__init__(n,od,na,seed)
+        with torch.no_grad():
+            self.actor.head.bias.copy_(torch.tensor([0.25,0.0,-0.25]))
+        self.ent=.02
+
+def run(env,sumo,agent,coalition,train,deploy_margin=0.05, extension_weight=0.005):
+    raw=env.start(sumo); adapter=StakeholderObservation(env,coalition,env.seed); obs=adapter.observe(); traj=[]
+    eligible_actions=[0,0,0]; eligible_prob_sum=np.zeros(3,dtype=float); eligible_prob_n=0
+    try:
+        while True:
+            mask=env.action_mask(); a,lp,v,_=agent.act(obs,mask,not train)
+            # Deterministic deployment uses native actuated control as the reference:
+            # a residual extension is accepted only when its learned probability exceeds
+            # the native action by a minimum margin. Stochastic PPO training is unchanged.
+            with torch.no_grad():
+                logits=agent.actor(torch.tensor(obs,dtype=torch.float32))
+                mt=torch.tensor(mask,dtype=torch.bool)
+                logits=logits.masked_fill(~mt,-1e9)
+                probs=torch.softmax(logits,dim=-1).cpu().numpy()
+            if not train:
+                for i in range(env.n_agents):
+                    if bool(mask[i,1]) or bool(mask[i,2]):
+                        best=int(np.argmax(probs[i]))
+                        if best!=0 and float(probs[i,best]-probs[i,0]) < deploy_margin:
+                            a[i]=0
+            for i in range(env.n_agents):
+                if bool(mask[i,1]) or bool(mask[i,2]):
+                    ai=int(a[i]); eligible_actions[ai]+=1
+                    eligible_prob_sum += probs[i]
+                    eligible_prob_n += 1
+            before=env.interventions
+            _,r,done=env.step(a)
+            # The inherited Phase2b reward penalizes cumulative intervention count,
+            # which is history-dependent. For stakeholder training use an explicit
+            # per-step residual-control cost so selective intervention is learnable.
+            step_interventions=env.interventions-before
+            # Penalize extension magnitude, not merely intervention count: +6 s must
+            # justify twice the residual-control exposure of +3 s.
+            extension_cost=sum((0 if int(x)==0 else (3 if int(x)==1 else 6)) for x in a)
+            r -= extension_weight*(extension_cost/max(env.n_agents,1))
+            nxt=adapter.observe()
+            if train: traj.append({"obs":obs,"act":a,"lp":lp,"v":v,"r":r,"done":done,"mask":mask})
+            obs=nxt
+            if done: break
+        summary=env.summary()
+        summary["eligible_action0"]=eligible_actions[0]
+        summary["eligible_action1"]=eligible_actions[1]
+        summary["eligible_action2"]=eligible_actions[2]
+        if eligible_prob_n:
+            summary["eligible_mean_p0"]=float(eligible_prob_sum[0]/eligible_prob_n)
+            summary["eligible_mean_p1"]=float(eligible_prob_sum[1]/eligible_prob_n)
+            summary["eligible_mean_p2"]=float(eligible_prob_sum[2]/eligible_prob_n)
+        return traj,summary
+    finally: env.close()
+
+def main():
+    ap=argparse.ArgumentParser()
+    for x in ("sumo","sumo-tools","scenario","selection","windows","outdir"):ap.add_argument("--"+x,required=True)
+    ap.add_argument("--extension-weight",type=float,default=.005);ap.add_argument("--traffic-seed-base",type=int,default=1100);ap.add_argument("--episodes",type=int,default=280);ap.add_argument("--train-s",type=int,default=600)
+    ap.add_argument("--eval-s",type=int,default=900);ap.add_argument("--seed",type=int,default=42)
+    ap.add_argument("--eval-seed",type=int,default=9001);args=ap.parse_args();os.makedirs(args.outdir,exist_ok=True)
+    sys.path.insert(0,os.path.abspath(args.sumo_tools));import traci
+    random.seed(args.seed);np.random.seed(args.seed);torch.manual_seed(args.seed)
+    sel=read_csv(args.selection);wins={r["condition"]:int(float(r["selected_hour"])) for r in read_csv(args.windows)}
+    conds=[c for c in ("Off-peak","AM","Lunch","PM") if c in wins]; cs=feasible_coalitions()
+    assert len(conds)==4 and len(cs)==14 and args.episodes>0 and args.episodes%56==0
+    assert np.isfinite(args.extension_weight) and args.extension_weight>=0
+    torch.set_num_threads(1)
+    agent=StakeholderMAPPO(9,14,3,args.seed);hist=[]
+    # Balanced, seed-reproducible schedule: cover coalition-condition pairs before
+    # reshuffling, avoiding the deterministic modulo coupling used by the smoke prototype.
+    schedule=[(cond,coalition) for coalition in cs for cond in conds]
+    rng=random.Random(args.seed); rng.shuffle(schedule)
+    while len(schedule)<args.episodes:
+        block=[(cond,coalition) for coalition in cs for cond in conds]
+        rng.shuffle(block); schedule.extend(block)
+    for ep in range(args.episodes):
+        cond,coalition=schedule[ep]; seed=args.traffic_seed_base+ep
+        env=Env(traci,args.scenario,sel,wins[cond]*3600,args.train_s,seed)
+        traj,s=run(env,args.sumo,agent,coalition,True,extension_weight=args.extension_weight); up=agent.update(traj)
+        row={"episode":ep+1,"condition":cond,"coalition":"+".join(coalition),"seed":seed,**s,**up};hist.append(row);print(row,flush=True)
+        if (ep+1)%56==0:
+            write_csv(os.path.join(args.outdir,'training_history.csv'),hist)
+            torch.save({'actor':agent.actor.state_dict(),'critic':agent.critic.state_dict(),'episode':ep+1,'meta':{'obs_dim':14,'extension_weight':args.extension_weight,'seed':args.seed}},os.path.join(args.outdir,f'block_{ep+1}.pt'))
+    write_csv(os.path.join(args.outdir,"training_history.csv"),hist)
+    torch.save({"actor":agent.actor.state_dict(),"critic":agent.critic.state_dict(),
+      "meta":{"obs_dim":14,"episodes":args.episodes,"extension_weight":args.extension_weight,"training_seed":args.seed,"traffic_seed_base":args.traffic_seed_base,"players":PLAYERS,"training":"balanced seed-reproducible coalition-condition shuffle","feasible_coalitions":14,
+      "controller":"validated guarded residual native/+3s/+6s","saved_state_used":False,"deterministic_deploy_margin":0.05}},os.path.join(args.outdir,"stakeholder_mappo.pt"))
+    # Short real-SUMO regression: grand coalition must execute and produce finite metrics/interventions.
+    coalition=tuple(PLAYERS);env=Env(traci,args.scenario,sel,wins["AM"]*3600,args.eval_s,args.eval_seed)
+    _,s=run(env,args.sumo,agent,coalition,False,deploy_margin=0.05)
+    assert all(np.isfinite(float(s[k])) for k in ("mean_halting_vehicles","mean_waiting_time_lane_sum_s","CO2_kg_selected_approaches"))
+    assert s["decision_steps"]>0
+    assert s["mask_eligible_slots"]>0
+    s["native_only_warning"]=bool(s["interventions"]==0)
+    # Short smoke validates execution, not policy optimality. Record saturation diagnostically;
+    # selective intervention is assessed after longer training against paired native baselines.
+    frac=float(s["interventions"])/max(float(s["mask_eligible_slots"]),1.0)
+    s["eligible_intervention_fraction"]=frac
+    s["policy_saturation_warning"]=bool(frac>=0.95)
+    json.dump({"condition":"AM","seed":args.eval_seed,"coalition":coalition,**s},open(os.path.join(args.outdir,"smoke.json"),"w"),indent=2)
+if __name__=="__main__":main()
