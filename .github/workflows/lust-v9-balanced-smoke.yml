@@ -1,0 +1,83 @@
+name: LuST V9 balanced training smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [lust-v8-policy-diagnostics-20261124]
+    paths:
+      - '.github/workflows/lust-v9-balanced-smoke.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  unit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cd research/lust_dynamic_coalition
+          python3 -m unittest -v test_v8_policy_diagnostics
+  reference:
+    needs: unit
+    runs-on: ubuntu-22.04
+    timeout-minutes: 320
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev python3-pip
+          python3 -m pip install --user numpy torch
+      - name: Download verified selection and windows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 44533285635 -R "${{ github.repository }}" -n lust-v6-new-mappo-pilot -D v6_input
+          test -s v6_input/phase2/selected_9_tls.csv
+          test -s v6_input/phase2/selected_operating_windows.csv
+      - name: Build pinned SUMO 0.27.0 and fetch official LuST
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v0_27_0 https://github.com/eclipse-sumo/sumo.git legacy_sumo_repo
+          cd legacy_sumo_repo/sumo
+          test "$(git rev-parse HEAD)" = "7eac6a1b2543aa902fa2eff8ae82548eaa4cce6b"
+          sed -i 's/\bHUGE\b/HUGE_VAL/g' src/foreign/eulerspiral/BiArc.cpp
+          sed -i 's/typemap\.iteritems()/typemap.items()/g' tools/build/typemap.py
+          make -f Makefile.cvs
+          ./configure --with-proj-gdal=no --with-fox-config=no --with-gtest-config=no --with-python=no --with-osg=no CXXFLAGS="-O2 -std=gnu++11"
+          make -j2
+          cd "$GITHUB_WORKSPACE"
+          git clone https://github.com/lcodeca/LuSTScenario.git official_lust
+          git -C official_lust checkout c4bd5bd3751d426d42a9a1749c815e47ea188549
+      - name: Train one complete balanced block
+        run: |
+          python3 research/lust_dynamic_coalition/train_v9_balanced.py \
+            --sumo "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/bin/sumo" \
+            --sumo-tools "$GITHUB_WORKSPACE/legacy_sumo_repo/sumo/tools" \
+            --scenario "$GITHUB_WORKSPACE/official_lust/scenario" \
+            --selection "$GITHUB_WORKSPACE/v6_input/phase2/selected_9_tls.csv" \
+            --windows "$GITHUB_WORKSPACE/v6_input/phase2/selected_operating_windows.csv" \
+            --episodes 56 --seed 42 --extension-weight 0.005 --outdir v9_training
+      - name: Verify complete training block
+        run: |
+          python3 - <<'PY'
+          import csv, collections, math, pathlib, json
+          p=pathlib.Path('v9_training')
+          rows=list(csv.DictReader((p/'training_history.csv').open()))
+          assert len(rows)==56
+          counts=collections.Counter((r['condition'],r['coalition']) for r in rows)
+          assert len(counts)==56 and set(counts.values())=={1}
+          assert len({r['seed'] for r in rows})==56
+          for r in rows:
+              for k in ('mean_waiting_time_lane_sum_s','mean_halting_vehicles','CO2_kg_selected_approaches','mean_reward'):
+                  assert math.isfinite(float(r[k])),(k,r)
+          for f in ('block_56.pt','stakeholder_mappo.pt','smoke.json'):
+              assert (p/f).stat().st_size>0
+          print('PASS: full balanced block, finite metrics, checkpoints present')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v9-balanced-smoke
+          path: v9_training/
+          retention-days: 90
